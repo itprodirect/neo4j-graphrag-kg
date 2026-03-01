@@ -268,32 +268,53 @@
     if (event.target.tagName === 'svg' || event.target.tagName === 'g') clearSelection();
   });
 
+  // Safe DOM helper: creates an element with textContent (never innerHTML)
+  function safeText(parent, tag, text, className) {
+    const el = document.createElement(tag);
+    el.textContent = text;
+    if (className) el.className = className;
+    parent.appendChild(el);
+    return el;
+  }
+
   function showNodeDetails(d) {
     const panel = document.getElementById('node-details');
-    const labels = (d.labels || []).map(l => {
-      const cls = l === 'Document' ? 'tag-document' : l === 'Chunk' ? 'tag-chunk' : l === 'Entity' ? 'tag-entity' : 'tag-default';
-      return `<span class="tag ${cls}">${l}</span>`;
-    }).join(' ');
-    const props = d.properties || {};
-    let propsHtml = '';
-    for (const [k, v] of Object.entries(props)) {
-      const val = typeof v === 'string' && v.length > 200 ? v.substring(0, 200) + '...' : v;
-      propsHtml += `<div><span class="label">${k}</span><div class="value">${val}</div></div>`;
-    }
+    panel.textContent = '';  // safe clear (not innerHTML = '')
 
-    // Count connections
+    // Labels section
+    const labelsSection = document.createElement('div');
+    labelsSection.className = 'section';
+    (d.labels || []).forEach(l => {
+      const cls = l === 'Document' ? 'tag-document' : l === 'Chunk' ? 'tag-chunk' : l === 'Entity' ? 'tag-entity' : 'tag-default';
+      safeText(labelsSection, 'span', l, 'tag ' + cls);
+    });
+    panel.appendChild(labelsSection);
+
+    // Connections count
     let connCount = 0;
     linksData.forEach(l => {
       const si = typeof l.source === 'object' ? l.source.index : l.source;
       const ti = typeof l.target === 'object' ? l.target.index : l.target;
       if (si === d._index || ti === d._index) connCount++;
     });
+    const connSection = document.createElement('div');
+    connSection.className = 'section';
+    safeText(connSection, 'span', 'Connections', 'label');
+    safeText(connSection, 'div', String(connCount), 'value');
+    panel.appendChild(connSection);
 
-    panel.innerHTML = `
-      <div class="section">${labels}</div>
-      <div class="section"><span class="label">Connections</span><div class="value">${connCount}</div></div>
-      <div class="section">${propsHtml}</div>
-    `;
+    // Properties section (all values rendered via textContent, never innerHTML)
+    const props = d.properties || {};
+    const propsSection = document.createElement('div');
+    propsSection.className = 'section';
+    for (const [k, v] of Object.entries(props)) {
+      const val = typeof v === 'string' && v.length > 200 ? v.substring(0, 200) + '...' : String(v);
+      const row = document.createElement('div');
+      safeText(row, 'span', k, 'label');
+      safeText(row, 'div', val, 'value');
+      propsSection.appendChild(row);
+    }
+    panel.appendChild(propsSection);
   }
 
   // Search
