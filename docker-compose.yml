@@ -11,8 +11,6 @@ services:
     volumes:
       - neo4j_data:/data
       - neo4j_logs:/logs
-    env_file:
-      - .env
 
 volumes:
   neo4j_data:
