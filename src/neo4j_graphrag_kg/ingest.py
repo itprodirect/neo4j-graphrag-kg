@@ -88,10 +88,10 @@ def ingest_file(
 
     # 9. Upsert MENTIONS (chunk → entity)
     mention_rows: list[dict[str, Any]] = []
-    for cid, text in chunk_tuples:
+    for cid, chunk_text_value in chunk_tuples:
         from neo4j_graphrag_kg.extractor import extract_entities_from_chunk
 
-        found = extract_entities_from_chunk(text)
+        found = extract_entities_from_chunk(chunk_text_value)
         for slug, _name in found:
             if slug in entity_set:
                 mention_rows.append({"chunk_id": cid, "entity_id": slug})
