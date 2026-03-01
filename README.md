@@ -67,6 +67,15 @@ source .venv/Scripts/activate   # Windows (Git Bash)
 # source .venv/bin/activate     # macOS / Linux
 
 pip install -e ".[dev]"
+
+# Optional: install LLM support (Anthropic + OpenAI)
+pip install -e ".[llm]"
+
+# Optional: install web UI (FastAPI + Uvicorn)
+pip install -e ".[web]"
+
+# Or install everything at once
+pip install -e ".[dev,all]"
 ```
 
 ### 4. Verify Everything Works
@@ -109,7 +118,39 @@ kg ingest --input examples/demo_llm.txt --doc-id nexus --title "Nexus Corp" \
 
 The LLM extractor produces **typed entities** (Person, Organization, Location, Technology) and **labeled relationships** (WORKS_FOR, LOCATED_IN, USES) with confidence scores and evidence snippets.
 
-### Query the Graph
+### Ask Questions in Natural Language (RAG)
+
+```bash
+# Install LLM dependencies if not already installed
+pip install -e ".[llm]"
+
+# Ask a question — generates Cypher, executes, and produces an answer
+kg ask "What entities are in the graph?"
+
+# Just generate the Cypher without executing it
+kg ask "How are Alice and Nexus related?" --cypher-only
+```
+
+The RAG pipeline: **question → schema introspection → text2cypher (LLM) → execute → answer generation (LLM)**. Includes automatic retry if the generated Cypher fails.
+
+### Visualize the Graph
+
+```bash
+# Install web dependencies
+pip install -e ".[web]"
+
+# Launch the interactive graph explorer
+kg serve
+```
+
+Opens a browser with an interactive D3.js force-directed graph visualization. Features:
+- Color-coded nodes by label (Document, Chunk, Entity)
+- Click to highlight connections and view details
+- Search box to find and highlight entities
+- Built-in Ask box for RAG queries
+- Zoom and pan navigation
+
+### Query the Graph (Raw Cypher)
 
 ```bash
 # List extracted entities
@@ -142,6 +183,8 @@ kg init-db           # Recreate schema
 | `kg status` | Show Neo4j version, node/relationship counts, constraints |
 | `kg ingest` | Ingest a text file → chunk → extract → upsert (`--extractor simple\|llm`) |
 | `kg query` | Run arbitrary Cypher and print results as a table |
+| `kg ask` | Natural language question → Cypher → answer (RAG pipeline) |
+| `kg serve` | Launch the web UI with interactive graph visualization |
 | `kg reset` | Drop all data (requires `--confirm` flag) |
 
 Run `kg --help` or `kg <command> --help` for full options.
@@ -172,6 +215,11 @@ Run `kg --help` or `kg <command> --help` for full options.
 | **ID** | `ids.py` | Deterministic slugs for deduplication across documents |
 | **Upsert** | `upsert.py` | Batched `UNWIND ... MERGE` writes to Neo4j |
 | **Schema** | `schema.py` | `CREATE CONSTRAINT/INDEX IF NOT EXISTS` (Neo4j 5+) |
+| **Text2Cypher** | `rag/text2cypher.py` | Schema introspection + LLM-generated Cypher from natural language |
+| **Answer** | `rag/answer.py` | LLM generates grounded answers from Cypher results |
+| **Pipeline** | `rag/pipeline.py` | Orchestrates text2cypher → execute → answer with retry |
+| **Web** | `web/app.py` | FastAPI server with graph API + RAG endpoints |
+| **Viz** | `web/static/index.html` | D3.js force-directed graph visualization |
 
 ### Design Principles
 
@@ -204,6 +252,16 @@ neo4j-graphrag-kg/
 │   │   └── llm.py           # LLM extractor (Anthropic / OpenAI)
 │   ├── upsert.py            # Batched MERGE operations
 │   ├── ingest.py            # Pipeline orchestrator
+│   ├── rag/
+│   │   ├── __init__.py      # Re-exports ask, RAGResponse
+│   │   ├── text2cypher.py   # Schema introspection + Cypher generation
+│   │   ├── answer.py        # RAGResponse + answer generation
+│   │   └── pipeline.py      # Orchestrator with retry logic
+│   ├── web/
+│   │   ├── __init__.py      # Web package marker
+│   │   ├── app.py           # FastAPI application
+│   │   └── static/
+│   │       └── index.html   # D3.js graph visualization
 │   └── py.typed             # PEP 561 type marker
 ├── tests/
 │   ├── test_config.py               # Unit: settings
@@ -212,6 +270,9 @@ neo4j-graphrag-kg/
 │   ├── test_extractor.py            # Unit: heuristic extraction
 │   ├── test_extractors_base.py      # Unit: base protocol + dataclasses
 │   ├── test_extractors_llm.py       # Unit: LLM extractor (mocked)
+│   ├── test_fixes_session4.py       # Unit: Session 4 fixes
+│   ├── test_rag.py                  # Unit: RAG pipeline (mocked)
+│   ├── test_web.py                  # Unit: web API (mocked)
 │   ├── test_integration_ping.py     # Integration: connectivity
 │   ├── test_integration_init_db.py  # Integration: schema setup
 │   └── test_integration_ingest.py   # Integration: idempotency
@@ -255,8 +316,8 @@ Integration tests automatically **skip** when Neo4j is not reachable — so `pyt
 - [x] **Session 1** — Project scaffold, Neo4j connection, CLI (`ping`, `init-db`, `status`)
 - [x] **Session 2** — Ingestion pipeline with heuristic extractor (`ingest`, `query`, `reset`)
 - [x] **Session 3** — LLM-powered entity/relationship extraction (OpenAI / Anthropic)
-- [ ] **Session 4** — RAG query interface (natural language → Cypher → answer)
-- [ ] **Session 5** — Visualization layer (React + D3/force-graph)
+- [x] **Session 4** — Code review fixes (relationship type persistence, ImportError handling, unified extractor interface, type validation)
+- [x] **Session 5** — RAG query pipeline (`kg ask`) + interactive graph visualization (`kg serve`)
 
 ---
 

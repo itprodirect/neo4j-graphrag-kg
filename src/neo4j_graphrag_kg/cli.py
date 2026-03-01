@@ -117,7 +117,7 @@ def ingest(
         "", "--entity-types", help="Comma-separated entity types for LLM extraction",
     ),
 ) -> None:
-    """Ingest a text file: chunk → extract entities → upsert to Neo4j."""
+    """Ingest a text file: chunk, extract entities, upsert to Neo4j."""
     _setup_logging()
 
     if not input.is_file():
