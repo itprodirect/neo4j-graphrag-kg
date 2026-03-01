@@ -15,6 +15,7 @@ from neo4j import Driver
 from neo4j_graphrag_kg.chunker import chunk_text
 from neo4j_graphrag_kg.extractor import build_edges, extract_entities
 from neo4j_graphrag_kg.ids import chunk_id as make_chunk_id
+from neo4j_graphrag_kg.ids import edge_id as make_edge_id
 from neo4j_graphrag_kg.upsert import (
     upsert_chunks,
     upsert_document,
@@ -99,6 +100,13 @@ def ingest_file(
     # 10. Upsert RELATED_TO
     related_rows = [
         {
+            "id": make_edge_id(
+                e.doc_id,
+                e.chunk_id,
+                e.source_id,
+                "simple",
+                e.target_id,
+            ),
             "source_id": e.source_id,
             "target_id": e.target_id,
             "doc_id": e.doc_id,
