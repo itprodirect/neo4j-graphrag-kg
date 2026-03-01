@@ -124,6 +124,7 @@ def ingest(
         typer.echo(f"File not found: {input}", err=True)
         raise typer.Exit(code=1)
 
+    from neo4j_graphrag_kg.extractors import get_extractor
     from neo4j_graphrag_kg.ingest import ingest_file
 
     settings = get_settings()
@@ -131,8 +132,7 @@ def ingest(
     # Resolve extractor type: CLI flag > config > default
     ext_type = extractor_name or settings.extractor_type or "simple"
 
-    # Build extractor instance
-    ext_instance = None
+    # Build extractor instance — all extractors go through the same interface
     if ext_type == "llm":
         llm_provider = provider or settings.llm_provider
         llm_model = model or settings.llm_model
@@ -152,7 +152,6 @@ def ingest(
             else settings.entity_types
         )
 
-        from neo4j_graphrag_kg.extractors import get_extractor
         ext_instance = get_extractor(
             "llm",
             provider=llm_provider,
@@ -162,8 +161,7 @@ def ingest(
             relationship_types=settings.relationship_types,
         )
     elif ext_type == "simple":
-        # Use legacy path (extractor=None) for exact backward compat
-        ext_instance = None
+        ext_instance = get_extractor("simple")
     else:
         typer.echo(f"Unknown extractor: {ext_type!r}. Use 'simple' or 'llm'.", err=True)
         raise typer.Exit(code=1)
