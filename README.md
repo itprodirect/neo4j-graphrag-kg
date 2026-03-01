@@ -81,13 +81,33 @@ kg status      # ✅ Shows Neo4j version + counts
 
 ## 📖 Usage
 
-### Ingest a Document
+### Ingest a Document (Heuristic Extractor)
 
 ```bash
 kg ingest --input examples/demo.txt --doc-id demo --title "Demo"
 ```
 
-This runs the full pipeline: **read → chunk → extract → upsert**.
+This runs the full pipeline: **read → chunk → extract → upsert** using the default heuristic (regex) extractor. No API key needed.
+
+### Ingest with LLM Extraction
+
+```bash
+# Install LLM dependencies (Anthropic + OpenAI SDKs)
+pip install -e ".[llm]"
+
+# Set your API key in .env (or pass --provider / --model flags)
+# LLM_PROVIDER=anthropic
+# LLM_API_KEY=sk-...
+
+# Run with LLM extractor
+kg ingest --input examples/demo_llm.txt --doc-id nexus --title "Nexus Corp" --extractor llm
+
+# Or specify provider/model inline
+kg ingest --input examples/demo_llm.txt --doc-id nexus --title "Nexus Corp" \
+    --extractor llm --provider openai --model gpt-4o
+```
+
+The LLM extractor produces **typed entities** (Person, Organization, Location, Technology) and **labeled relationships** (WORKS_FOR, LOCATED_IN, USES) with confidence scores and evidence snippets.
 
 ### Query the Graph
 
@@ -96,7 +116,7 @@ This runs the full pipeline: **read → chunk → extract → upsert**.
 kg query --cypher "MATCH (e:Entity) RETURN e.name, e.type ORDER BY e.name LIMIT 25"
 
 # Explore relationships
-kg query --cypher "MATCH (e1)-[r:RELATED_TO]->(e2) RETURN e1.name, e2.name, r.confidence ORDER BY r.confidence DESC LIMIT 10"
+kg query --cypher "MATCH (e1)-[r:RELATED_TO]->(e2) RETURN e1.name, e2.name, r.type, r.confidence ORDER BY r.confidence DESC LIMIT 10"
 
 # View chunks for a document
 kg query --cypher "MATCH (d:Document)-[:HAS_CHUNK]->(c:Chunk) WHERE d.id = 'demo' RETURN c.id, left(c.text, 80) AS preview"
@@ -120,7 +140,7 @@ kg init-db           # Recreate schema
 | `kg ping` | Verify Neo4j connectivity |
 | `kg init-db` | Create constraints & indexes (idempotent, Neo4j 5+) |
 | `kg status` | Show Neo4j version, node/relationship counts, constraints |
-| `kg ingest` | Ingest a text file → chunk → extract → upsert |
+| `kg ingest` | Ingest a text file → chunk → extract → upsert (`--extractor simple\|llm`) |
 | `kg query` | Run arbitrary Cypher and print results as a table |
 | `kg reset` | Drop all data (requires `--confirm` flag) |
 
@@ -148,7 +168,7 @@ Run `kg --help` or `kg <command> --help` for full options.
 |-------|--------|-------------|
 | **Read** | `ingest.py` | Loads UTF-8 text files |
 | **Chunk** | `chunker.py` | Fixed-size splits with configurable overlap |
-| **Extract** | `extractor.py` | Identifies entities & co-occurrence relationships |
+| **Extract** | `extractors/` | Heuristic (`simple`) or LLM-powered (`llm`) entity/relationship extraction |
 | **ID** | `ids.py` | Deterministic slugs for deduplication across documents |
 | **Upsert** | `upsert.py` | Batched `UNWIND ... MERGE` writes to Neo4j |
 | **Schema** | `schema.py` | `CREATE CONSTRAINT/INDEX IF NOT EXISTS` (Neo4j 5+) |
@@ -176,7 +196,12 @@ neo4j-graphrag-kg/
 │   ├── schema.py            # Constraints & indexes
 │   ├── ids.py               # Deterministic ID generation
 │   ├── chunker.py           # Fixed-size character chunker
-│   ├── extractor.py         # Entity extraction + edge builder
+│   ├── extractor.py         # Backward-compat shim → extractors/
+│   ├── extractors/
+│   │   ├── __init__.py      # Registry: get_extractor("simple"|"llm")
+│   │   ├── base.py          # BaseExtractor ABC + shared dataclasses
+│   │   ├── simple.py        # Heuristic extractor (regex + co-occurrence)
+│   │   └── llm.py           # LLM extractor (Anthropic / OpenAI)
 │   ├── upsert.py            # Batched MERGE operations
 │   ├── ingest.py            # Pipeline orchestrator
 │   └── py.typed             # PEP 561 type marker
@@ -184,12 +209,15 @@ neo4j-graphrag-kg/
 │   ├── test_config.py               # Unit: settings
 │   ├── test_ids.py                  # Unit: ID generation
 │   ├── test_chunker.py              # Unit: chunking logic
-│   ├── test_extractor.py            # Unit: extraction
+│   ├── test_extractor.py            # Unit: heuristic extraction
+│   ├── test_extractors_base.py      # Unit: base protocol + dataclasses
+│   ├── test_extractors_llm.py       # Unit: LLM extractor (mocked)
 │   ├── test_integration_ping.py     # Integration: connectivity
 │   ├── test_integration_init_db.py  # Integration: schema setup
 │   └── test_integration_ingest.py   # Integration: idempotency
 ├── examples/
-│   └── demo.txt                     # Sample document for ingestion
+│   ├── demo.txt                     # Sample document (heuristic extractor)
+│   └── demo_llm.txt                # Rich entity document (LLM extractor)
 ├── docs/
 │   ├── DEV_NOTES.md                 # Architecture & troubleshooting
 │   └── SESSION_LOG.md               # Build session changelog
@@ -226,7 +254,7 @@ Integration tests automatically **skip** when Neo4j is not reachable — so `pyt
 
 - [x] **Session 1** — Project scaffold, Neo4j connection, CLI (`ping`, `init-db`, `status`)
 - [x] **Session 2** — Ingestion pipeline with heuristic extractor (`ingest`, `query`, `reset`)
-- [ ] **Session 3** — LLM-powered entity/relationship extraction (OpenAI / Anthropic)
+- [x] **Session 3** — LLM-powered entity/relationship extraction (OpenAI / Anthropic)
 - [ ] **Session 4** — RAG query interface (natural language → Cypher → answer)
 - [ ] **Session 5** — Visualization layer (React + D3/force-graph)
 
