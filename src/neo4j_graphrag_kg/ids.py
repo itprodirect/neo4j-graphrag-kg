@@ -1,9 +1,10 @@
-"""Deterministic ID generation for entities and chunks.
+"""Deterministic ID generation for entities, chunks, and edges.
 
 Rules:
 - entity_id = slugify(name): lowercase, trim, collapse whitespace,
   remove punctuation, replace spaces with hyphens.
 - chunk_id  = "{doc_id}::chunk::{idx}" (zero-based index).
+- edge_id   = "{doc_id}::{chunk_id}::{source_id}::{extractor}::{target_id}".
 """
 
 from __future__ import annotations
@@ -14,21 +15,29 @@ import unicodedata
 # Characters allowed in a slug (letters, digits, hyphens, spaces kept temporarily).
 _SLUG_STRIP_RE = re.compile(r"[^\w\s-]", re.UNICODE)
 _WHITESPACE_RE = re.compile(r"[\s]+")
+_SYMBOL_REWRITES: tuple[tuple[re.Pattern[str], str], ...] = (
+    (re.compile(r"(?i)\b([a-z0-9]+)\+\+(?=\W|$)"), r"\1-plus-plus"),
+    (re.compile(r"(?i)\b([a-z0-9]+)#(?=\W|$)"), r"\1-sharp"),
+)
 
 
 def slugify(text: str) -> str:
     """Convert *text* to a stable, URL-safe slug.
 
-    1. NFKD-normalise and strip combining marks.
+    1. NFKD-normalize and strip combining marks.
     2. Lowercase.
-    3. Remove everything except word-chars, whitespace, hyphens.
-    4. Collapse runs of whitespace / hyphens into a single hyphen.
-    5. Strip leading/trailing hyphens.
+    3. Rewrite symbol-heavy tokens (e.g., C++ -> c-plus-plus, C# -> c-sharp).
+    4. Remove everything except word chars, whitespace, hyphens.
+    5. Collapse runs of whitespace into a single hyphen.
+    6. Strip leading/trailing hyphens.
     """
-    # Normalise unicode → ASCII-safe form
     text = unicodedata.normalize("NFKD", text)
     text = "".join(ch for ch in text if not unicodedata.combining(ch))
     text = text.lower().strip()
+
+    for pattern, replacement in _SYMBOL_REWRITES:
+        text = pattern.sub(replacement, text)
+
     text = _SLUG_STRIP_RE.sub("", text)
     text = _WHITESPACE_RE.sub("-", text)
     text = text.strip("-")
@@ -43,3 +52,14 @@ def entity_id(name: str) -> str:
 def chunk_id(doc_id: str, idx: int) -> str:
     """Deterministic chunk ID from document ID and zero-based index."""
     return f"{doc_id}::chunk::{idx}"
+
+
+def edge_id(
+    doc_id: str,
+    chunk_id: str,
+    source_id: str,
+    extractor: str,
+    target_id: str,
+) -> str:
+    """Deterministic relationship ID for RELATED_TO edges."""
+    return f"{doc_id}::{chunk_id}::{source_id}::{extractor}::{target_id}"

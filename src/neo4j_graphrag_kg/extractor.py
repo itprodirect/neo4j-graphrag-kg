@@ -1,6 +1,6 @@
 """Simple heuristic entity extractor and co-occurrence edge builder.
 
-No LLM required.  Extracts capitalised phrases (1–4 tokens) and known
+No LLM required. Extracts capitalized phrases (1-4 tokens) and known
 terms, de-duplicates via slugify, applies a frequency threshold, and
 builds RELATED_TO edges from co-occurrence within the same chunk.
 """
@@ -12,10 +12,10 @@ from collections import Counter
 from dataclasses import dataclass, field
 from itertools import combinations
 
-from neo4j_graphrag_kg.ids import entity_id, slugify
+from neo4j_graphrag_kg.ids import slugify
 
 # ---------------------------------------------------------------------------
-# Well-known terms (lowercase) to always extract even if not capitalised.
+# Well-known terms (lowercase) to always extract even if not capitalized.
 # ---------------------------------------------------------------------------
 KNOWN_TERMS: set[str] = {
     "neo4j", "cypher", "graphrag", "knowledge graph", "vector search",
@@ -24,10 +24,22 @@ KNOWN_TERMS: set[str] = {
     "rag",
 }
 
-# Regex for capitalised phrases: 1–4 Title-Case words (ASCII + unicode letters).
+
+# Regex for capitalized phrases: 1-4 Title-Case words (ASCII + unicode letters).
 _CAP_PHRASE_RE = re.compile(
     r"\b(?:[A-Z\u00C0-\u024F][\w]*(?:\s+[A-Z\u00C0-\u024F][\w]*){0,3})\b"
 )
+
+# Precompiled known-term patterns with word boundaries to avoid substring false positives.
+# Terms are matched longest-first so multi-word terms are considered before short acronyms.
+_KNOWN_TERMS_ORDERED = tuple(sorted(KNOWN_TERMS, key=len, reverse=True))
+_KNOWN_TERM_PATTERNS: dict[str, re.Pattern[str]] = {
+    term: re.compile(
+        rf"(?<!\w){r'\s+'.join(re.escape(part) for part in term.split())}(?!\w)",
+        re.IGNORECASE,
+    )
+    for term in _KNOWN_TERMS_ORDERED
+}
 
 # Minimum occurrences (across all chunks) to keep an entity.
 MIN_FREQUENCY = 1
@@ -67,15 +79,22 @@ def _normalise_name(name: str) -> str:
     return re.sub(r"\s+", " ", name).strip()
 
 
+def _display_name_for_term(term: str) -> str:
+    """Render a stable display form for known terms."""
+    if term in {"llm", "rag"}:
+        return term.upper()
+    return term.title()
+
+
 def extract_entities_from_chunk(text: str) -> list[tuple[str, str]]:
     """Return (slug, display_name) pairs found in *text*.
 
-    Finds capitalised phrases via regex and matches known terms
-    (case-insensitive).  Returns de-duplicated list by slug.
+    Finds capitalized phrases via regex and matches known terms
+    (case-insensitive, boundary-aware). Returns de-duplicated list by slug.
     """
-    found: dict[str, str] = {}  # slug → display_name
+    found: dict[str, str] = {}  # slug -> display_name
 
-    # 1. Capitalised phrases
+    # 1. Capitalized phrases
     for match in _CAP_PHRASE_RE.finditer(text):
         name = _normalise_name(match.group())
         if len(name) < 2:
@@ -84,14 +103,12 @@ def extract_entities_from_chunk(text: str) -> list[tuple[str, str]]:
         if slug and slug not in found:
             found[slug] = name
 
-    # 2. Known terms (case-insensitive scan)
-    text_lower = text.lower()
-    for term in KNOWN_TERMS:
-        if term in text_lower:
+    # 2. Known terms (case-insensitive, boundary-aware scan)
+    for term in _KNOWN_TERMS_ORDERED:
+        if _KNOWN_TERM_PATTERNS[term].search(text):
             slug = slugify(term)
             if slug and slug not in found:
-                # Use title-case as canonical display form
-                found[slug] = term.title()
+                found[slug] = _display_name_for_term(term)
 
     return list(found.items())
 
@@ -145,8 +162,8 @@ def build_edges(
     """Build RELATED_TO edges from entity co-occurrence in each chunk.
 
     For every pair of entities that appear in the same chunk, create an
-    edge.  Confidence is normalised co-occurrence count (per chunk: each
-    co-occurring pair scores 1/C(n,2) where n = entity count in chunk).
+    edge. Confidence is normalized co-occurrence count against the max
+    pair count across all chunks.
 
     Parameters
     ----------
@@ -155,7 +172,7 @@ def build_edges(
     doc_id:
         Document ID (stored as edge metadata).
     entity_set:
-        Optional allowlist of entity slugs.  If provided, only entities
+        Optional allowlist of entity slugs. If provided, only entities
         in this set generate edges.
 
     Returns
@@ -179,9 +196,6 @@ def build_edges(
         if len(slugs) < 2:
             continue
 
-        n_pairs = len(slugs) * (len(slugs) - 1) // 2
-        pair_score = 1.0 / n_pairs if n_pairs > 0 else 1.0
-
         for a, b in combinations(slugs, 2):
             key = (a, b)
             if key not in pair_acc:
@@ -189,12 +203,12 @@ def build_edges(
             acc = pair_acc[key]
             acc.count += 1
             acc.chunk_ids.append(cid)
-            # Keep first evidence reference only (to limit size)
+            # Keep first evidence references only (to limit size)
             if len(acc.evidence) < 3:
                 snippet = text[:120].replace("\n", " ")
                 acc.evidence.append(f"chunk={cid}: {snippet}...")
 
-    # Normalise confidence: max count across all pairs
+    # Normalize confidence: max count across all pairs
     max_count = max((a.count for a in pair_acc.values()), default=1)
 
     edges: list[ExtractedEdge] = []

@@ -30,6 +30,17 @@ class TestExtractEntitiesFromChunk:
         slugs = [s for s, _n in found]
         assert slugs.count("neo4j") == 1
 
+    def test_known_terms_use_word_boundaries(self) -> None:
+        text = "Pragmatics and fragments should not trigger term extraction."
+        found = dict(extract_entities_from_chunk(text))
+        assert "rag" not in found
+
+    def test_known_terms_match_standalone_token(self) -> None:
+        text = "RAG works well with retrieval augmented generation."
+        found = dict(extract_entities_from_chunk(text))
+        assert "rag" in found
+        assert "retrieval-augmented-generation" in found
+
     def test_empty_text(self) -> None:
         assert extract_entities_from_chunk("") == []
 
