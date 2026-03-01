@@ -247,7 +247,11 @@ class LLMExtractor(BaseExtractor):
     # ---- API call with retry ---------------------------------------------
 
     def _call_llm(self, text: str) -> str:
-        """Call the LLM with retry logic. Returns raw text response."""
+        """Call the LLM with retry logic. Returns raw text response.
+
+        ImportError is never retried — it surfaces immediately with
+        install guidance so the user can fix their environment.
+        """
         system = self._build_system_prompt()
         user = _USER_PROMPT.format(text=text)
         last_error: Exception | None = None
@@ -263,6 +267,9 @@ class LLMExtractor(BaseExtractor):
                     "LLM call took %.2fs (attempt %d)", elapsed, attempt + 1,
                 )
                 return response
+            except ImportError:
+                # SDK not installed — surface immediately, never retry.
+                raise
             except Exception as exc:
                 last_error = exc
                 if attempt < self._max_retries:
