@@ -186,3 +186,35 @@ def query(
         raise typer.Exit(code=1)
     finally:
         close_driver()
+
+
+@app.command()
+def reset(
+    confirm: bool = typer.Option(False, "--confirm", help="Required flag to confirm reset"),
+) -> None:
+    """Drop ALL nodes and relationships (DETACH DELETE). Requires --confirm."""
+    if not confirm:
+        typer.echo("Pass --confirm to actually delete all data.", err=True)
+        raise typer.Exit(code=1)
+
+    settings = get_settings()
+    driver = get_driver(settings)
+    try:
+        with driver.session(database=settings.neo4j_database) as session:
+            # Use batched delete to handle large graphs without OOM
+            deleted = 0
+            while True:
+                result = session.run(
+                    "MATCH (n) WITH n LIMIT 10000 DETACH DELETE n RETURN count(*) AS c"
+                )
+                record = result.single()
+                batch_count = record["c"] if record else 0
+                if batch_count == 0:
+                    break
+                deleted += batch_count
+        typer.echo(f"Reset complete. Deleted {deleted} nodes (and their relationships).")
+    except Exception as exc:
+        typer.echo(f"Reset failed: {exc}", err=True)
+        raise typer.Exit(code=1)
+    finally:
+        close_driver()
