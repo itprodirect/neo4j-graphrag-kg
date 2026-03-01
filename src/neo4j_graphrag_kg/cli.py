@@ -8,6 +8,7 @@ import typer
 
 from neo4j_graphrag_kg.config import get_settings
 from neo4j_graphrag_kg.neo4j_client import get_driver, close_driver
+from neo4j_graphrag_kg.rag.text2cypher import validate_cypher_readonly
 from neo4j_graphrag_kg.schema import ALL_STATEMENTS
 
 app = typer.Typer(help="Neo4j Knowledge-Graph CLI", no_args_is_help=True)
@@ -194,13 +195,26 @@ def ingest(
 @app.command()
 def query(
     cypher: str = typer.Option(..., "--cypher", help="Cypher query to execute"),
+    allow_write: bool = typer.Option(
+        False,
+        "--allow-write",
+        help="Allow write/admin Cypher (bypasses read-only validation).",
+    ),
 ) -> None:
-    """Run a read-only Cypher query and print results as a table."""
+    """Run a Cypher query and print results as a table (read-only by default)."""
     settings = get_settings()
     driver = get_driver(settings)
     try:
+        query_text = cypher
+        if not allow_write:
+            try:
+                query_text = validate_cypher_readonly(cypher)
+            except Exception as exc:
+                typer.echo(f"Query blocked by read-only validation: {exc}", err=True)
+                raise typer.Exit(code=1)
+
         with driver.session(database=settings.neo4j_database) as session:
-            result = session.run(cypher)
+            result = session.run(query_text)
             records = [dict(r) for r in result]
 
         if not records:

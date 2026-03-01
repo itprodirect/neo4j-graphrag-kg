@@ -17,6 +17,10 @@ CONSTRAINTS: list[str] = [
         "CREATE CONSTRAINT entity_id_unique IF NOT EXISTS "
         "FOR (e:Entity) REQUIRE e.id IS UNIQUE"
     ),
+    (
+        "CREATE CONSTRAINT related_to_id_unique IF NOT EXISTS "
+        "FOR ()-[r:RELATED_TO]-() REQUIRE r.id IS UNIQUE"
+    ),
 ]
 
 # --- Indexes (IF NOT EXISTS) -----------------------------------------------
