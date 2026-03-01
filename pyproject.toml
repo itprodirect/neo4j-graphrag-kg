@@ -19,6 +19,15 @@ dev = [
     "ruff>=0.4",
     "mypy>=1.0",
 ]
+anthropic = [
+    "anthropic>=0.39.0",
+]
+openai = [
+    "openai>=1.50.0",
+]
+llm = [
+    "neo4j-graphrag-kg[anthropic,openai]",
+]
 
 [project.scripts]
 kg = "neo4j_graphrag_kg.cli:app"
