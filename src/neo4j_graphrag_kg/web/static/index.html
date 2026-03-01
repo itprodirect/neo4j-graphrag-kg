@@ -1,0 +1,389 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>neo4j-graphrag-kg</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.9.0/d3.min.js"></script>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #1a1a2e; color: #e0e0e0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, monospace; overflow: hidden; }
+
+  #toolbar { display: flex; gap: 10px; padding: 10px 16px; background: #16213e; border-bottom: 1px solid #0f3460; align-items: center; flex-wrap: wrap; }
+  #toolbar h1 { font-size: 16px; color: #e94560; margin-right: 12px; white-space: nowrap; }
+  #toolbar input, #toolbar button { font-size: 13px; padding: 6px 12px; border-radius: 4px; border: 1px solid #0f3460; background: #1a1a2e; color: #e0e0e0; }
+  #toolbar input { width: 220px; }
+  #toolbar input:focus { outline: none; border-color: #e94560; }
+  #toolbar button { cursor: pointer; background: #0f3460; }
+  #toolbar button:hover { background: #e94560; }
+  #ask-input { flex: 1; min-width: 200px; }
+  #ask-btn { white-space: nowrap; }
+  .status-badge { font-size: 11px; color: #888; margin-left: auto; white-space: nowrap; }
+
+  #main { display: flex; height: calc(100vh - 46px); }
+  #graph-container { flex: 7; position: relative; }
+  #graph-container svg { width: 100%; height: 100%; }
+
+  #panel { flex: 3; min-width: 260px; max-width: 400px; background: #16213e; border-left: 1px solid #0f3460; overflow-y: auto; padding: 16px; }
+  #panel h2 { font-size: 14px; color: #e94560; margin-bottom: 8px; }
+  #panel .section { margin-bottom: 16px; }
+  #panel .label { font-size: 11px; color: #888; text-transform: uppercase; letter-spacing: 0.5px; }
+  #panel .value { font-size: 13px; margin-bottom: 6px; word-break: break-all; }
+  #panel .tag { display: inline-block; padding: 2px 8px; border-radius: 3px; font-size: 11px; margin: 2px; }
+  .tag-document { background: #1e3a5f; color: #5dade2; }
+  .tag-chunk { background: #2c2c3a; color: #aaa; }
+  .tag-entity { background: #1e5f3a; color: #58d68d; }
+  .tag-default { background: #3a2c3a; color: #c39bd3; }
+
+  #answer-box { display: none; padding: 12px; margin: 8px 0; background: #1a1a2e; border: 1px solid #0f3460; border-radius: 6px; font-size: 13px; line-height: 1.5; }
+  #answer-box .answer-text { color: #e0e0e0; }
+  #answer-box .answer-cypher { color: #888; font-size: 11px; margin-top: 8px; font-family: monospace; }
+  #answer-box .answer-meta { color: #666; font-size: 11px; margin-top: 4px; }
+
+  .node-label { font-size: 10px; fill: #ccc; pointer-events: none; text-anchor: middle; dominant-baseline: central; }
+  .edge-label { font-size: 8px; fill: #666; pointer-events: none; text-anchor: middle; }
+  .link { stroke-opacity: 0.4; }
+  .link.highlighted { stroke-opacity: 1; stroke-width: 2.5px; }
+  .node.dimmed { opacity: 0.15; }
+  .link.dimmed { stroke-opacity: 0.05; }
+</style>
+</head>
+<body>
+
+<div id="toolbar">
+  <h1>neo4j-graphrag-kg</h1>
+  <input id="search-input" type="text" placeholder="Search nodes..." />
+  <input id="ask-input" type="text" placeholder="Ask a question about the graph..." />
+  <button id="ask-btn">Ask</button>
+  <span class="status-badge" id="status-badge">loading...</span>
+</div>
+
+<div id="main">
+  <div id="graph-container">
+    <svg id="graph-svg"></svg>
+  </div>
+  <div id="panel">
+    <h2>Details</h2>
+    <div id="answer-box">
+      <div class="answer-text" id="answer-text"></div>
+      <div class="answer-cypher" id="answer-cypher"></div>
+      <div class="answer-meta" id="answer-meta"></div>
+    </div>
+    <div id="node-details">
+      <p style="color: #666; font-size: 13px;">Click a node to see details.</p>
+    </div>
+  </div>
+</div>
+
+<script>
+(function() {
+  const API = '';  // same origin
+  const svg = d3.select('#graph-svg');
+  const container = document.getElementById('graph-container');
+  let width = container.clientWidth;
+  let height = container.clientHeight;
+
+  // Color scheme
+  const colorMap = {
+    'Document': '#2e86c1',
+    'Chunk': '#666',
+    'Entity': '#27ae60',
+  };
+  function nodeColor(d) {
+    for (const [label, color] of Object.entries(colorMap)) {
+      if (d.labels && d.labels.includes(label)) return color;
+    }
+    return '#8e44ad';
+  }
+  function nodeRadius(d) {
+    const base = 6;
+    const links = (d._linkCount || 0);
+    return Math.min(base + Math.sqrt(links) * 2, 24);
+  }
+  function nodeLabel(d) {
+    const p = d.properties || {};
+    return p.name || p.title || p.id || d.id || '';
+  }
+
+  // SVG setup
+  const g = svg.append('g');
+  svg.call(d3.zoom().scaleExtent([0.1, 8]).on('zoom', (e) => {
+    g.attr('transform', e.transform);
+  }));
+
+  const linkG = g.append('g').attr('class', 'links');
+  const nodeG = g.append('g').attr('class', 'nodes');
+  const labelG = g.append('g').attr('class', 'labels');
+  const edgeLabelG = g.append('g').attr('class', 'edge-labels');
+
+  let simulation;
+  let nodesData = [];
+  let linksData = [];
+  let selectedNode = null;
+
+  function render(data) {
+    // Build element_id -> index map
+    const nodeMap = {};
+    nodesData = data.nodes.map((n, i) => {
+      const eid = n._element_id || n.id;
+      nodeMap[eid] = i;
+      n._index = i;
+      n._linkCount = 0;
+      return n;
+    });
+
+    linksData = [];
+    data.edges.forEach(e => {
+      const si = nodeMap[e.source];
+      const ti = nodeMap[e.target];
+      if (si !== undefined && ti !== undefined) {
+        nodesData[si]._linkCount = (nodesData[si]._linkCount || 0) + 1;
+        nodesData[ti]._linkCount = (nodesData[ti]._linkCount || 0) + 1;
+        linksData.push({
+          source: si,
+          target: ti,
+          type: e.properties?.type || e.type || '',
+          properties: e.properties || {},
+        });
+      }
+    });
+
+    // Links
+    const link = linkG.selectAll('line').data(linksData, (d,i) => i);
+    link.exit().remove();
+    const linkEnter = link.enter().append('line')
+      .attr('class', 'link')
+      .attr('stroke', '#444')
+      .attr('stroke-width', 1.2);
+
+    // Edge labels
+    const edgeLabel = edgeLabelG.selectAll('text').data(linksData, (d,i) => i);
+    edgeLabel.exit().remove();
+    edgeLabel.enter().append('text')
+      .attr('class', 'edge-label')
+      .text(d => d.type);
+
+    // Nodes
+    const node = nodeG.selectAll('circle').data(nodesData, (d,i) => i);
+    node.exit().remove();
+    const nodeEnter = node.enter().append('circle')
+      .attr('r', d => nodeRadius(d))
+      .attr('fill', d => nodeColor(d))
+      .attr('stroke', '#111')
+      .attr('stroke-width', 1)
+      .attr('class', 'node')
+      .style('cursor', 'pointer')
+      .on('click', (event, d) => selectNode(d))
+      .call(d3.drag()
+        .on('start', dragStart)
+        .on('drag', dragging)
+        .on('end', dragEnd));
+
+    // Labels
+    const label = labelG.selectAll('text').data(nodesData, (d,i) => i);
+    label.exit().remove();
+    label.enter().append('text')
+      .attr('class', 'node-label')
+      .attr('dy', d => nodeRadius(d) + 12)
+      .text(d => {
+        const l = nodeLabel(d);
+        return l.length > 20 ? l.substring(0, 18) + '...' : l;
+      });
+
+    // Simulation
+    if (simulation) simulation.stop();
+    simulation = d3.forceSimulation(nodesData)
+      .force('link', d3.forceLink(linksData).distance(80))
+      .force('charge', d3.forceManyBody().strength(-150))
+      .force('center', d3.forceCenter(width / 2, height / 2))
+      .force('collision', d3.forceCollide().radius(d => nodeRadius(d) + 4))
+      .on('tick', () => {
+        linkG.selectAll('line')
+          .attr('x1', d => d.source.x).attr('y1', d => d.source.y)
+          .attr('x2', d => d.target.x).attr('y2', d => d.target.y);
+        edgeLabelG.selectAll('text')
+          .attr('x', d => (d.source.x + d.target.x) / 2)
+          .attr('y', d => (d.source.y + d.target.y) / 2);
+        nodeG.selectAll('circle')
+          .attr('cx', d => d.x).attr('cy', d => d.y);
+        labelG.selectAll('text')
+          .attr('x', d => d.x).attr('y', d => d.y);
+      });
+
+    document.getElementById('status-badge').textContent =
+      `${nodesData.length} nodes, ${linksData.length} edges`;
+  }
+
+  function dragStart(event, d) {
+    if (!event.active) simulation.alphaTarget(0.3).restart();
+    d.fx = d.x; d.fy = d.y;
+  }
+  function dragging(event, d) { d.fx = event.x; d.fy = event.y; }
+  function dragEnd(event, d) {
+    if (!event.active) simulation.alphaTarget(0);
+    d.fx = null; d.fy = null;
+  }
+
+  // Node selection + highlight
+  function selectNode(d) {
+    selectedNode = d;
+    const connectedNodes = new Set();
+    connectedNodes.add(d._index);
+    linksData.forEach(l => {
+      const si = typeof l.source === 'object' ? l.source.index : l.source;
+      const ti = typeof l.target === 'object' ? l.target.index : l.target;
+      if (si === d._index) connectedNodes.add(ti);
+      if (ti === d._index) connectedNodes.add(si);
+    });
+
+    nodeG.selectAll('circle')
+      .classed('dimmed', n => !connectedNodes.has(n._index))
+      .attr('stroke', n => n._index === d._index ? '#e94560' : '#111')
+      .attr('stroke-width', n => n._index === d._index ? 3 : 1);
+    linkG.selectAll('line')
+      .classed('dimmed', l => {
+        const si = typeof l.source === 'object' ? l.source.index : l.source;
+        const ti = typeof l.target === 'object' ? l.target.index : l.target;
+        return si !== d._index && ti !== d._index;
+      })
+      .classed('highlighted', l => {
+        const si = typeof l.source === 'object' ? l.source.index : l.source;
+        const ti = typeof l.target === 'object' ? l.target.index : l.target;
+        return si === d._index || ti === d._index;
+      });
+    labelG.selectAll('text')
+      .classed('dimmed', n => !connectedNodes.has(n._index));
+
+    showNodeDetails(d);
+  }
+
+  function clearSelection() {
+    selectedNode = null;
+    nodeG.selectAll('circle').classed('dimmed', false).attr('stroke', '#111').attr('stroke-width', 1);
+    linkG.selectAll('line').classed('dimmed', false).classed('highlighted', false);
+    labelG.selectAll('text').classed('dimmed', false);
+  }
+
+  svg.on('click', (event) => {
+    if (event.target.tagName === 'svg' || event.target.tagName === 'g') clearSelection();
+  });
+
+  function showNodeDetails(d) {
+    const panel = document.getElementById('node-details');
+    const labels = (d.labels || []).map(l => {
+      const cls = l === 'Document' ? 'tag-document' : l === 'Chunk' ? 'tag-chunk' : l === 'Entity' ? 'tag-entity' : 'tag-default';
+      return `<span class="tag ${cls}">${l}</span>`;
+    }).join(' ');
+    const props = d.properties || {};
+    let propsHtml = '';
+    for (const [k, v] of Object.entries(props)) {
+      const val = typeof v === 'string' && v.length > 200 ? v.substring(0, 200) + '...' : v;
+      propsHtml += `<div><span class="label">${k}</span><div class="value">${val}</div></div>`;
+    }
+
+    // Count connections
+    let connCount = 0;
+    linksData.forEach(l => {
+      const si = typeof l.source === 'object' ? l.source.index : l.source;
+      const ti = typeof l.target === 'object' ? l.target.index : l.target;
+      if (si === d._index || ti === d._index) connCount++;
+    });
+
+    panel.innerHTML = `
+      <div class="section">${labels}</div>
+      <div class="section"><span class="label">Connections</span><div class="value">${connCount}</div></div>
+      <div class="section">${propsHtml}</div>
+    `;
+  }
+
+  // Search
+  document.getElementById('search-input').addEventListener('input', (e) => {
+    const q = e.target.value.toLowerCase();
+    if (!q) { clearSelection(); return; }
+    const matching = new Set();
+    nodesData.forEach(n => {
+      const label = nodeLabel(n).toLowerCase();
+      if (label.includes(q)) matching.add(n._index);
+    });
+    nodeG.selectAll('circle')
+      .classed('dimmed', n => matching.size > 0 && !matching.has(n._index))
+      .attr('stroke', n => matching.has(n._index) ? '#e94560' : '#111')
+      .attr('stroke-width', n => matching.has(n._index) ? 3 : 1);
+    labelG.selectAll('text')
+      .classed('dimmed', n => matching.size > 0 && !matching.has(n._index));
+  });
+
+  // Ask
+  const askBtn = document.getElementById('ask-btn');
+  const askInput = document.getElementById('ask-input');
+  const answerBox = document.getElementById('answer-box');
+
+  async function doAsk() {
+    const q = askInput.value.trim();
+    if (!q) return;
+    askBtn.disabled = true;
+    askBtn.textContent = 'Thinking...';
+    answerBox.style.display = 'block';
+    document.getElementById('answer-text').textContent = 'Generating answer...';
+    document.getElementById('answer-cypher').textContent = '';
+    document.getElementById('answer-meta').textContent = '';
+
+    try {
+      const resp = await fetch(API + '/api/ask', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({question: q}),
+      });
+      const data = await resp.json();
+      if (resp.ok) {
+        document.getElementById('answer-text').textContent = data.answer || '(no answer)';
+        document.getElementById('answer-cypher').textContent = 'Cypher: ' + (data.cypher || '');
+        document.getElementById('answer-meta').textContent = `${data.row_count || 0} rows in ${data.elapsed_s || 0}s`;
+      } else {
+        document.getElementById('answer-text').textContent = 'Error: ' + (data.detail || resp.statusText);
+      }
+    } catch (err) {
+      document.getElementById('answer-text').textContent = 'Error: ' + err.message;
+    }
+    askBtn.disabled = false;
+    askBtn.textContent = 'Ask';
+  }
+
+  askBtn.addEventListener('click', doAsk);
+  askInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') doAsk(); });
+
+  // Load graph
+  async function loadGraph() {
+    try {
+      const resp = await fetch(API + '/api/graph?limit=500');
+      const data = await resp.json();
+      render(data);
+    } catch (err) {
+      document.getElementById('status-badge').textContent = 'Error loading graph';
+      console.error(err);
+    }
+  }
+
+  // Load status
+  async function loadStatus() {
+    try {
+      const resp = await fetch(API + '/api/status');
+      const data = await resp.json();
+      document.getElementById('status-badge').textContent =
+        `${data.version} | ${data.nodes} nodes, ${data.relationships} rels`;
+    } catch (err) { /* ignore */ }
+  }
+
+  // Resize
+  window.addEventListener('resize', () => {
+    width = container.clientWidth;
+    height = container.clientHeight;
+    if (simulation) simulation.force('center', d3.forceCenter(width / 2, height / 2)).alpha(0.3).restart();
+  });
+
+  loadStatus();
+  loadGraph();
+})();
+</script>
+</body>
+</html>
