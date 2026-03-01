@@ -57,6 +57,12 @@ class Settings:
         "WORKS_FOR", "LOCATED_IN", "RELATED_TO", "USES", "PART_OF",
     ])
 
+    # Web server CORS
+    cors_origins: list[str] = field(default_factory=lambda: [
+        "http://localhost:8000",
+        "http://127.0.0.1:8000",
+    ])
+
     @classmethod
     def from_env(cls) -> Settings:
         """Build settings from environment variables (loads .env first)."""
@@ -82,6 +88,10 @@ class Settings:
             llm_api_key=os.getenv("LLM_API_KEY", ""),
             entity_types=_csv_to_list(entity_types_str),
             relationship_types=_csv_to_list(relationship_types_str),
+            cors_origins=_csv_to_list(os.getenv(
+                "CORS_ORIGINS",
+                "http://localhost:8000,http://127.0.0.1:8000",
+            )),
         )
 
 

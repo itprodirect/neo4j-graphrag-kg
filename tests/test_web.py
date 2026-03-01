@@ -348,15 +348,26 @@ class TestAskEndpoint:
 
 
 class TestCORS:
-    """Verify CORS headers are present."""
+    """Verify CORS headers are present for allowed origins."""
 
-    def test_cors_headers_on_options(self) -> None:
+    def test_cors_headers_on_allowed_origin(self) -> None:
         resp = client.options(
             "/api/status",
             headers={
-                "Origin": "http://localhost:3000",
+                "Origin": "http://localhost:8000",
                 "Access-Control-Request-Method": "GET",
             },
         )
         assert resp.status_code == 200
         assert "access-control-allow-origin" in resp.headers
+
+    def test_cors_rejects_disallowed_origin(self) -> None:
+        resp = client.options(
+            "/api/status",
+            headers={
+                "Origin": "http://evil.example.com",
+                "Access-Control-Request-Method": "GET",
+            },
+        )
+        # CORS middleware returns 400 for disallowed origins
+        assert resp.status_code == 400

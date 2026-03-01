@@ -29,10 +29,12 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI(title="neo4j-graphrag-kg", version="0.1.0")
 
-# CORS for local development
+# CORS — restricted to configured origins (default: localhost:8000).
+# Set CORS_ORIGINS=* in .env to allow all origins (opt-in only).
+_cors_settings = get_settings()
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=_cors_settings.cors_origins,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -138,7 +140,7 @@ async def index() -> FileResponse:
 
 
 @app.get("/api/graph")
-async def graph_full(limit: int = Query(200, ge=1, le=5000)) -> JSONResponse:
+async def graph_full(limit: int = Query(200, ge=1, le=1000)) -> JSONResponse:
     """Return the full graph data (nodes + edges) as JSON."""
     cypher = (
         f"MATCH (n)-[r]->(m) "
@@ -152,15 +154,23 @@ async def graph_full(limit: int = Query(200, ge=1, le=5000)) -> JSONResponse:
         raise HTTPException(status_code=500, detail="Query execution failed")
 
 
+_MAX_SUBGRAPH_LIMIT = 1000
+
+
 @app.get("/api/graph/entity/{name}")
-async def graph_entity(name: str) -> JSONResponse:
+async def graph_entity(
+    name: str,
+    limit: int = Query(200, ge=1, le=1000),
+) -> JSONResponse:
     """Return subgraph around a specific entity (2 hops)."""
+    safe_limit = min(limit, _MAX_SUBGRAPH_LIMIT)
+    # Use parameterised CONTAINS instead of regex to prevent ReDoS
     cypher = (
-        "MATCH (e:Entity) WHERE e.name =~ $pattern "
+        "MATCH (e:Entity) WHERE toLower(e.name) CONTAINS toLower($term) "
         "OPTIONAL MATCH p=(e)-[*..2]-(other) "
-        "RETURN e, p"
+        f"RETURN e, p LIMIT {safe_limit}"
     )
-    params = {"pattern": f"(?i).*{name}.*"}
+    params = {"term": name}
     try:
         data = _graph_query(cypher, params)
         return JSONResponse(data)
@@ -170,12 +180,16 @@ async def graph_entity(name: str) -> JSONResponse:
 
 
 @app.get("/api/graph/document/{doc_id}")
-async def graph_document(doc_id: str) -> JSONResponse:
+async def graph_document(
+    doc_id: str,
+    limit: int = Query(200, ge=1, le=1000),
+) -> JSONResponse:
     """Return subgraph for a specific document."""
+    safe_limit = min(limit, _MAX_SUBGRAPH_LIMIT)
     cypher = (
         "MATCH (d:Document {id: $doc_id})-[r1:HAS_CHUNK]->(c:Chunk) "
         "OPTIONAL MATCH (c)-[r2:MENTIONS]->(e:Entity) "
-        "RETURN d, r1, c, r2, e"
+        f"RETURN d, r1, c, r2, e LIMIT {safe_limit}"
     )
     params = {"doc_id": doc_id}
     try:
