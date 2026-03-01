@@ -60,6 +60,14 @@ def edge_id(
     source_id: str,
     extractor: str,
     target_id: str,
+    rel_type: str = "",
 ) -> str:
-    """Deterministic relationship ID for RELATED_TO edges."""
-    return f"{doc_id}::{chunk_id}::{source_id}::{extractor}::{target_id}"
+    """Deterministic relationship ID for RELATED_TO edges.
+
+    When *rel_type* is provided (and non-empty), it is appended so that
+    (A)-[WORKS_FOR]->(B) and (A)-[LOCATED_IN]->(B) produce distinct IDs.
+    """
+    base = f"{doc_id}::{chunk_id}::{source_id}::{extractor}::{target_id}"
+    if rel_type:
+        return f"{base}::{rel_type}"
+    return base

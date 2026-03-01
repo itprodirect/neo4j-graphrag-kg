@@ -177,7 +177,8 @@ SET r.extractor  = row.extractor,
     r.doc_id     = row.doc_id,
     r.chunk_id   = row.chunk_id,
     r.confidence = row.confidence,
-    r.evidence   = row.evidence
+    r.evidence   = row.evidence,
+    r.type       = row.type
 """
 
 

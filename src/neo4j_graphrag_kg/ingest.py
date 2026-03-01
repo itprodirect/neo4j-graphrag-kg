@@ -135,6 +135,7 @@ def ingest_file(
             "extractor": "simple",
             "confidence": e.confidence,
             "evidence": e.evidence,
+            "type": "RELATED_TO",
         }
         for e in edges
     ]
@@ -208,8 +209,12 @@ def _ingest_with_extractor(
                 all_entities[src_slug] = {"name": rel.source, "type": "Term"}
             if tgt_slug not in all_entities:
                 all_entities[tgt_slug] = {"name": rel.target, "type": "Term"}
+            rel_type = rel.type or "RELATED_TO"
             all_relationships.append({
-                "id": make_edge_id(doc_id, cid, src_slug, ext_label, tgt_slug),
+                "id": make_edge_id(
+                    doc_id, cid, src_slug, ext_label, tgt_slug,
+                    rel_type=rel_type,
+                ),
                 "source_id": src_slug,
                 "target_id": tgt_slug,
                 "doc_id": doc_id,
@@ -217,6 +222,7 @@ def _ingest_with_extractor(
                 "extractor": ext_label,
                 "confidence": rel.confidence,
                 "evidence": rel.evidence,
+                "type": rel_type,
             })
 
     logger.info("Extracted %d unique entities via extractor", len(all_entities))
