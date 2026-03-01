@@ -41,3 +41,45 @@ def init_db() -> None:
         raise typer.Exit(code=1)
     finally:
         close_driver()
+
+
+@app.command()
+def status() -> None:
+    """Show Neo4j version, node/rel counts, and constraints."""
+    settings = get_settings()
+    driver = get_driver(settings)
+    try:
+        with driver.session(database=settings.neo4j_database) as session:
+            # Version
+            ver = session.run(
+                "CALL dbms.components() YIELD name, versions RETURN name, versions"
+            ).single()
+            if ver:
+                typer.echo(f"{ver['name']} {ver['versions'][0]}")
+
+            # Node / relationship counts
+            counts = session.run(
+                "MATCH (n) "
+                "OPTIONAL MATCH ()-[r]->() "
+                "RETURN count(DISTINCT n) AS nodes, count(DISTINCT r) AS rels"
+            ).single()
+            if counts:
+                typer.echo(f"Nodes: {counts['nodes']}  Relationships: {counts['rels']}")
+
+            # Constraints
+            constraints = list(session.run("SHOW CONSTRAINTS"))
+            typer.echo(f"Constraints ({len(constraints)}):")
+            for c in constraints:
+                typer.echo(f"  {c['name']}")
+
+            # Indexes
+            indexes = list(session.run("SHOW INDEXES"))
+            typer.echo(f"Indexes ({len(indexes)}):")
+            for idx in indexes:
+                typer.echo(f"  {idx['name']}")
+
+    except Exception as exc:
+        typer.echo(f"Status check failed: {exc}", err=True)
+        raise typer.Exit(code=1)
+    finally:
+        close_driver()
