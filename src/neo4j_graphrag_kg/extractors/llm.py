@@ -223,8 +223,8 @@ class LLMExtractor(BaseExtractor):
             "claude-sonnet-4-20250514" if provider == "anthropic" else "gpt-4o"
         )
         self._api_key = api_key
-        self._entity_types = entity_types or DEFAULT_ENTITY_TYPES
-        self._relationship_types = relationship_types or DEFAULT_RELATIONSHIP_TYPES
+        self._entity_types = DEFAULT_ENTITY_TYPES if entity_types is None else entity_types
+        self._relationship_types = DEFAULT_RELATIONSHIP_TYPES if relationship_types is None else relationship_types
         self._max_retries = max_retries
         self._call_fn = _PROVIDERS[provider]
 
