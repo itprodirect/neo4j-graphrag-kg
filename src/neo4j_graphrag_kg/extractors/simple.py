@@ -5,6 +5,9 @@ terms, de-duplicates via slugify, applies a frequency threshold, and
 builds RELATED_TO edges from co-occurrence within the same chunk.
 
 Implements ``BaseExtractor`` for the pluggable extractor architecture.
+
+The standalone functions (``extract_entities``, ``build_edges``, etc.)
+preserve their original return types for backward compatibility.
 """
 
 from __future__ import annotations
@@ -16,7 +19,7 @@ from itertools import combinations
 
 from neo4j_graphrag_kg.extractors.base import (
     BaseExtractor,
-    ExtractedEntity,
+    ExtractedEntity as BaseEntity,
     ExtractedRelationship,
     ExtractionResult,
 )
@@ -51,6 +54,31 @@ _KNOWN_TERM_PATTERNS: dict[str, re.Pattern[str]] = {
 
 # Minimum occurrences (across all chunks) to keep an entity.
 MIN_FREQUENCY = 1
+
+
+# ---------------------------------------------------------------------------
+# Legacy data containers (backward-compatible with old extractor.py)
+# ---------------------------------------------------------------------------
+
+@dataclass(frozen=True)
+class ExtractedEntity:
+    """An entity extracted from the text (legacy format with pre-computed id)."""
+
+    id: str          # slugified
+    name: str        # original display form
+    type: str        # e.g. "Term"
+
+
+@dataclass(frozen=True)
+class ExtractedEdge:
+    """A co-occurrence edge between two entities in a chunk."""
+
+    source_id: str
+    target_id: str
+    doc_id: str
+    chunk_id: str
+    confidence: float
+    evidence: str    # short reference back to the chunk
 
 
 # ---------------------------------------------------------------------------
@@ -102,16 +130,7 @@ def extract_entities(
 ) -> list[ExtractedEntity]:
     """Extract de-duplicated entities from a list of (chunk_id, text) pairs.
 
-    Parameters
-    ----------
-    chunks:
-        List of (chunk_id, chunk_text).
-    min_frequency:
-        Minimum number of chunks an entity must appear in.
-
-    Returns
-    -------
-    list[ExtractedEntity]
+    Returns legacy ``ExtractedEntity`` objects with pre-computed ``.id`` slugs.
     """
     freq: Counter[str] = Counter()
     slug_to_name: dict[str, str] = {}
@@ -126,6 +145,7 @@ def extract_entities(
     for slug, count in freq.items():
         if count >= min_frequency:
             entities.append(ExtractedEntity(
+                id=slug,
                 name=slug_to_name[slug],
                 type="Term",
             ))
@@ -140,26 +160,10 @@ def build_edges(
     chunks: list[tuple[str, str]],
     doc_id: str,
     entity_set: set[str] | None = None,
-) -> list[ExtractedRelationship]:
+) -> list[ExtractedEdge]:
     """Build RELATED_TO edges from entity co-occurrence in each chunk.
 
-    For every pair of entities that appear in the same chunk, create an
-    edge. Confidence is normalized co-occurrence count against the max
-    pair count across all chunks.
-
-    Parameters
-    ----------
-    chunks:
-        List of (chunk_id, chunk_text).
-    doc_id:
-        Document ID (stored as edge metadata).
-    entity_set:
-        Optional allowlist of entity slugs. If provided, only entities
-        in this set generate edges.
-
-    Returns
-    -------
-    list[ExtractedRelationship]
+    Returns legacy ``ExtractedEdge`` objects.
     """
     # Accumulate per-pair counts and evidence
     @dataclass
@@ -167,17 +171,11 @@ def build_edges(
         count: int = 0
         evidence: list[str] = field(default_factory=list)
         chunk_ids: list[str] = field(default_factory=list)
-        source_name: str = ""
-        target_name: str = ""
 
     pair_acc: dict[tuple[str, str], _Acc] = {}
-    slug_to_name: dict[str, str] = {}
 
     for cid, text in chunks:
         found = extract_entities_from_chunk(text)
-        for slug, name in found:
-            if slug not in slug_to_name:
-                slug_to_name[slug] = name
         slugs = [s for s, _n in found if entity_set is None or s in entity_set]
         slugs = sorted(set(slugs))
 
@@ -187,10 +185,7 @@ def build_edges(
         for a, b in combinations(slugs, 2):
             key = (a, b)
             if key not in pair_acc:
-                pair_acc[key] = _Acc(
-                    source_name=slug_to_name.get(a, a),
-                    target_name=slug_to_name.get(b, b),
-                )
+                pair_acc[key] = _Acc()
             acc = pair_acc[key]
             acc.count += 1
             acc.chunk_ids.append(cid)
@@ -202,13 +197,14 @@ def build_edges(
     # Normalize confidence: max count across all pairs
     max_count = max((a.count for a in pair_acc.values()), default=1)
 
-    edges: list[ExtractedRelationship] = []
+    edges: list[ExtractedEdge] = []
     for (src, tgt), acc in sorted(pair_acc.items()):
         confidence = acc.count / max_count
-        edges.append(ExtractedRelationship(
-            source=acc.source_name,
-            target=acc.target_name,
-            type="RELATED_TO",
+        edges.append(ExtractedEdge(
+            source_id=src,
+            target_id=tgt,
+            doc_id=doc_id,
+            chunk_id=acc.chunk_ids[0],  # representative chunk
             confidence=round(confidence, 4),
             evidence="; ".join(acc.evidence[:2]),
         ))
@@ -224,6 +220,7 @@ class SimpleExtractor(BaseExtractor):
     """Heuristic extractor that uses regex + known-term matching.
 
     No external dependencies or API keys required.
+    Implements ``BaseExtractor.extract()`` returning the new base types.
     """
 
     def extract(
@@ -236,7 +233,7 @@ class SimpleExtractor(BaseExtractor):
         found_pairs = extract_entities_from_chunk(text)
 
         entities = [
-            ExtractedEntity(name=name, type="Term")
+            BaseEntity(name=name, type="Term")
             for _slug, name in found_pairs
         ]
 
