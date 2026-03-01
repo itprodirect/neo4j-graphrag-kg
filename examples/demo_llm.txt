@@ -1,0 +1,32 @@
+Nexus Technologies is a San Francisco-based artificial intelligence company
+founded in 2021 by Dr. Sarah Chen and Marcus Rivera.  The company specializes
+in building enterprise knowledge graph platforms powered by large language models.
+Dr. Chen serves as Chief Executive Officer while Rivera leads the engineering
+division as Chief Technology Officer.  Their flagship product, NexusGraph, helps
+Fortune 500 companies turn unstructured documents into queryable knowledge graphs.
+
+The engineering team at Nexus Technologies relies heavily on Neo4j as their
+primary graph database.  They use Python for their backend services and have
+built a custom retrieval augmented generation pipeline called NexusRAG.  The
+pipeline combines vector search with graph traversal to provide accurate answers
+to complex enterprise queries.  NexusRAG uses Claude, Anthropic's large language
+model, for both entity extraction and answer generation.
+
+In March 2024 Nexus Technologies announced a strategic partnership with DataVault
+Corporation, a cloud infrastructure provider headquartered in Seattle.  Under the
+agreement DataVault provides dedicated GPU clusters for NexusRAG inference workloads
+while Nexus Technologies integrates DataVault's storage APIs into the NexusGraph
+platform.  The partnership was led by DataVault's VP of Partnerships, Kenji Tanaka,
+and Nexus's Head of Business Development, Priya Sharma.
+
+The company recently opened a research lab in London headed by Dr. James Okafor,
+a former professor of computational linguistics at Imperial College London.
+The London lab focuses on multilingual entity extraction and cross-lingual knowledge
+graph alignment.  Dr. Okafor's team collaborates closely with the Natural Language
+Processing group at Stanford University, where Dr. Chen completed her PhD in 2018.
+
+Nexus Technologies has raised a total of 85 million dollars across three funding
+rounds.  Their Series B was led by Horizon Ventures with participation from
+TechFront Capital and Anthropic's corporate venture fund.  The company currently
+employs 120 people across its San Francisco headquarters, Seattle satellite office,
+and London research lab.
