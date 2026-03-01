@@ -96,7 +96,8 @@ def ask(
     """
     t0 = time.perf_counter()
 
-    logger.info("RAG question: %s", question)
+    logger.info("RAG query started")
+    logger.debug("RAG question: %s", question)
 
     # Step 1: Generate Cypher
     cypher = text_to_cypher(
@@ -107,7 +108,7 @@ def ask(
         model=model,
         api_key=api_key,
     )
-    logger.info("Generated Cypher (%d chars)", len(cypher))
+    logger.debug("Generated Cypher (%d chars): %s", len(cypher), cypher)
 
     # Step 1b: Validate Cypher is read-only
     try:
@@ -135,9 +136,9 @@ def ask(
     results: list[dict[str, Any]] = []
     try:
         results = _execute_cypher(driver, database, cypher)
-        logger.info("Cypher returned %d rows", len(results))
+        logger.debug("Cypher returned %d rows", len(results))
     except Exception as exc:
-        logger.warning("Cypher execution failed: %s — retrying text2cypher", exc)
+        logger.warning("Cypher execution failed — retrying text2cypher")
         # Retry: regenerate Cypher with the error context
         retry_question = (
             f"{question}\n\n"
@@ -156,11 +157,11 @@ def ask(
             )
             # Validate the retry too
             cypher = validate_cypher_readonly(cypher)
-            logger.info("Retry generated Cypher (%d chars)", len(cypher))
+            logger.debug("Retry generated Cypher (%d chars)", len(cypher))
             results = _execute_cypher(driver, database, cypher)
-            logger.info("Retry Cypher returned %d rows", len(results))
+            logger.debug("Retry Cypher returned %d rows", len(results))
         except Exception as retry_exc:
-            logger.error("Retry also failed: %s", retry_exc)
+            logger.error("Retry also failed")
             elapsed = time.perf_counter() - t0
             return RAGResponse(
                 question=question,
@@ -184,7 +185,7 @@ def ask(
     )
 
     elapsed = time.perf_counter() - t0
-    logger.info("RAG pipeline completed in %.2fs", elapsed)
+    logger.info("RAG query completed: %d rows, %.2fs", len(results), elapsed)
     return RAGResponse(
         question=question,
         cypher=cypher,
