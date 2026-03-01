@@ -1,6 +1,6 @@
 """Batched Neo4j upsert operations using UNWIND + MERGE.
 
-All writes go through explicit transactions with UNWIND $rows batching.
+All writes go through managed write transactions with UNWIND $rows batching.
 Never single-row MERGE in a Python loop.
 """
 
@@ -26,19 +26,22 @@ def _run_batch(
     rows: list[dict[str, Any]],
     batch_size: int = 500,
 ) -> int:
-    """Execute *cypher* with UNWIND batching inside explicit transactions.
+    """Execute *cypher* with UNWIND batching inside managed write transactions.
 
     Returns the total number of rows processed.
     """
+
+    def _write_rows(tx: Any, query: str, batch_rows: list[dict[str, Any]]) -> None:
+        # consume() ensures server execution is completed in the managed tx callback.
+        tx.run(query, rows=batch_rows).consume()
+
     total = 0
-    for i in range(0, len(rows), batch_size):
-        batch = rows[i : i + batch_size]
-        with driver.session(database=database) as session:
-            with session.begin_transaction() as tx:
-                tx.run(cypher, rows=batch)
-                tx.commit()
-        total += len(batch)
-        logger.info("Wrote batch %d–%d (%d rows)", i, i + len(batch), len(batch))
+    with driver.session(database=database) as session:
+        for i in range(0, len(rows), batch_size):
+            batch = rows[i : i + batch_size]
+            session.execute_write(_write_rows, cypher, batch)
+            total += len(batch)
+            logger.info("Wrote batch %d-%d (%d rows)", i, i + len(batch), len(batch))
     return total
 
 
@@ -108,8 +111,15 @@ def upsert_chunks(
 _UPSERT_ENTITIES = """\
 UNWIND $rows AS row
 MERGE (e:Entity {id: row.id})
-SET e.name = row.name,
+ON CREATE SET e.name = row.name
+SET e.name = coalesce(e.name, row.name),
     e.type = row.type
+WITH e, row, coalesce(e.aliases, [e.name]) AS aliases
+SET e.aliases = CASE
+    WHEN row.name IN aliases THEN aliases
+    ELSE aliases + row.name
+END
+SET e.alias_count = size(e.aliases)
 """
 
 
@@ -155,8 +165,17 @@ _UPSERT_RELATED = """\
 UNWIND $rows AS row
 MATCH (e1:Entity {id: row.source_id})
 MATCH (e2:Entity {id: row.target_id})
-MERGE (e1)-[r:RELATED_TO {doc_id: row.doc_id, chunk_id: row.chunk_id}]->(e2)
+OPTIONAL MATCH (e1)-[legacy:RELATED_TO {
+    doc_id: row.doc_id,
+    chunk_id: row.chunk_id,
+    extractor: row.extractor
+}]->(e2)
+WITH e1, e2, row, [lr IN collect(legacy) WHERE lr IS NOT NULL] AS legacy_rels
+FOREACH (lr IN legacy_rels | SET lr.id = coalesce(lr.id, row.id))
+MERGE (e1)-[r:RELATED_TO {id: row.id}]->(e2)
 SET r.extractor  = row.extractor,
+    r.doc_id     = row.doc_id,
+    r.chunk_id   = row.chunk_id,
     r.confidence = row.confidence,
     r.evidence   = row.evidence
 """
