@@ -239,6 +239,103 @@ def query(
 
 
 @app.command()
+def ask(
+    question: str = typer.Argument(..., help="Natural language question about the graph"),
+    cypher_only: bool = typer.Option(
+        False, "--cypher-only", help="Print generated Cypher without executing",
+    ),
+    provider: str = typer.Option(
+        "", "--provider", help="LLM provider: 'anthropic' or 'openai'",
+    ),
+    model: str = typer.Option(
+        "", "--model", help="LLM model name",
+    ),
+) -> None:
+    """Ask a natural language question about the knowledge graph (requires LLM API key)."""
+    _setup_logging()
+
+    from neo4j_graphrag_kg.rag.pipeline import ask as rag_ask
+
+    settings = get_settings()
+
+    api_key = settings.llm_api_key
+    if not api_key:
+        typer.echo(
+            "LLM_API_KEY is required for 'kg ask'. "
+            "Set it in .env or as an environment variable.",
+            err=True,
+        )
+        raise typer.Exit(code=1)
+
+    llm_provider = provider or settings.llm_provider
+    llm_model = model or settings.llm_model
+
+    driver = get_driver(settings)
+    try:
+        response = rag_ask(
+            question,
+            driver=driver,
+            database=settings.neo4j_database,
+            provider=llm_provider,
+            model=llm_model,
+            api_key=api_key,
+            cypher_only=cypher_only,
+        )
+
+        if cypher_only:
+            typer.echo(response.cypher)
+        else:
+            typer.echo(f"\n{response.answer}\n")
+            typer.echo(f"--- Cypher: {response.cypher}")
+            typer.echo(f"--- Rows: {len(response.results)}  Time: {response.elapsed_s}s")
+    except Exception as exc:
+        typer.echo(f"RAG query failed: {exc}", err=True)
+        raise typer.Exit(code=1)
+    finally:
+        close_driver()
+
+
+@app.command()
+def serve(
+    port: int = typer.Option(8000, "--port", help="Port to run the web server on"),
+    host: str = typer.Option("127.0.0.1", "--host", help="Host to bind to"),
+) -> None:
+    """Start the graph visualization web server."""
+    _setup_logging()
+
+    try:
+        import uvicorn
+    except ImportError:
+        typer.echo(
+            "The 'web' extra is required for 'kg serve'. "
+            "Install it with: pip install -e \".[web]\"",
+            err=True,
+        )
+        raise typer.Exit(code=1)
+
+    import webbrowser
+    import threading
+
+    url = f"http://{host}:{port}" if host != "0.0.0.0" else f"http://localhost:{port}"
+    typer.echo(f"Starting graph visualization server at {url}")
+
+    # Open browser after a short delay to let the server start
+    def _open_browser() -> None:
+        import time
+        time.sleep(1.5)
+        webbrowser.open(url)
+
+    threading.Thread(target=_open_browser, daemon=True).start()
+
+    uvicorn.run(
+        "neo4j_graphrag_kg.web.app:app",
+        host=host,
+        port=port,
+        log_level="info",
+    )
+
+
+@app.command()
 def reset(
     confirm: bool = typer.Option(False, "--confirm", help="Required flag to confirm reset"),
 ) -> None:
