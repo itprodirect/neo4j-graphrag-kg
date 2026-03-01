@@ -164,6 +164,19 @@ kg query --cypher "MATCH (e1)-[r:RELATED_TO]->(e2) RETURN e1.name, e2.name, r.ty
 kg query --cypher "MATCH (d:Document)-[:HAS_CHUNK]->(c:Chunk) WHERE d.id = 'demo' RETURN c.id, left(c.text, 80) AS preview"
 ```
 
+`kg query` is **read-only by default** and validates Cypher before execution.
+Use `--allow-write` only for intentional destructive/admin operations.
+
+```bash
+# Read-only validation is enabled by default
+kg query --cypher "MATCH (n) RETURN count(n) AS c"
+
+# Explicitly bypass read-only validation
+kg query --allow-write --cypher "MATCH (n) DETACH DELETE n RETURN count(*) AS deleted"
+```
+
+If validation fails, `kg query` exits with code 1 and does not execute the query.
+
 ### Reset & Rebuild
 
 ```bash

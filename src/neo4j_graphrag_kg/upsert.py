@@ -7,10 +7,13 @@ Never single-row MERGE in a Python loop.
 from __future__ import annotations
 
 import logging
+import time
 from datetime import datetime, timezone
+from typing import Callable
 from typing import Any
 
 from neo4j import Driver
+from neo4j.exceptions import ServiceUnavailable, SessionExpired, TransientError
 
 logger = logging.getLogger(__name__)
 
@@ -18,6 +21,37 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # Generic batch helper
 # ---------------------------------------------------------------------------
+
+_TRANSIENT_WRITE_ERRORS = (TransientError, ServiceUnavailable, SessionExpired)
+
+
+def _execute_write_with_retry(
+    session: Any,
+    callback: Callable[[Any, str, list[dict[str, Any]]], None],
+    cypher: str,
+    rows: list[dict[str, Any]],
+    max_attempts: int = 3,
+    base_backoff_s: float = 0.2,
+) -> None:
+    """Execute a managed write with bounded retry for transient driver errors."""
+    attempts = max(1, max_attempts)
+    for attempt in range(1, attempts + 1):
+        try:
+            session.execute_write(callback, cypher, rows)
+            return
+        except _TRANSIENT_WRITE_ERRORS as exc:
+            if attempt >= attempts:
+                raise
+            backoff = base_backoff_s * (2 ** (attempt - 1))
+            logger.warning(
+                "Transient write failed (%s), retrying attempt %d/%d in %.2fs",
+                exc.__class__.__name__,
+                attempt + 1,
+                attempts,
+                backoff,
+            )
+            time.sleep(backoff)
+
 
 def _run_batch(
     driver: Driver,
@@ -39,7 +73,7 @@ def _run_batch(
     with driver.session(database=database) as session:
         for i in range(0, len(rows), batch_size):
             batch = rows[i : i + batch_size]
-            session.execute_write(_write_rows, cypher, batch)
+            _execute_write_with_retry(session, _write_rows, cypher, batch)
             total += len(batch)
             logger.info("Wrote batch %d-%d (%d rows)", i, i + len(batch), len(batch))
     return total
@@ -52,9 +86,9 @@ def _run_batch(
 _UPSERT_DOCUMENT = """\
 UNWIND $rows AS row
 MERGE (d:Document {id: row.id})
-SET d.title      = row.title,
-    d.source     = row.source,
-    d.created_at = row.created_at
+ON CREATE SET d.created_at = row.created_at
+SET d.title  = row.title,
+    d.source = row.source
 """
 
 
