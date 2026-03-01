@@ -1,0 +1,342 @@
+"""Security-focused tests for all Session 6 fixes.
+
+Tests run without API keys — LLM calls are mocked.
+"""
+
+from __future__ import annotations
+
+from typing import Any
+from unittest.mock import MagicMock, patch
+
+import pytest
+from fastapi.testclient import TestClient
+
+from neo4j_graphrag_kg.rag.text2cypher import validate_cypher_readonly
+from neo4j_graphrag_kg.rag.pipeline import ask
+from neo4j_graphrag_kg.rag.answer import RAGResponse
+from neo4j_graphrag_kg.web.app import app
+
+client = TestClient(app)
+
+
+# ====================================================================
+# Fix 1 — Read-only Cypher validator
+# ====================================================================
+
+
+class TestValidateCypherReadonly:
+    """validate_cypher_readonly accepts reads, rejects writes."""
+
+    # --- Valid read queries ---
+
+    def test_accepts_simple_match(self) -> None:
+        result = validate_cypher_readonly("MATCH (n) RETURN n LIMIT 10")
+        assert "MATCH" in result
+        assert "LIMIT" in result
+
+    def test_accepts_optional_match(self) -> None:
+        result = validate_cypher_readonly(
+            "OPTIONAL MATCH (n)-[r]->(m) RETURN n, r, m LIMIT 50"
+        )
+        assert "OPTIONAL MATCH" in result
+
+    def test_accepts_with_clause(self) -> None:
+        result = validate_cypher_readonly(
+            "MATCH (n) WITH n RETURN n LIMIT 20"
+        )
+        assert "WITH" in result
+
+    def test_accepts_call_db_labels(self) -> None:
+        result = validate_cypher_readonly("CALL db.labels() YIELD label")
+        assert "CALL" in result
+
+    # --- Injects LIMIT when missing ---
+
+    def test_injects_limit_when_missing(self) -> None:
+        result = validate_cypher_readonly("MATCH (n) RETURN n")
+        assert "LIMIT 100" in result
+
+    def test_preserves_existing_limit(self) -> None:
+        result = validate_cypher_readonly("MATCH (n) RETURN n LIMIT 25")
+        assert "LIMIT 25" in result
+        assert "LIMIT 100" not in result
+
+    # --- Rejects write clauses ---
+
+    def test_rejects_create(self) -> None:
+        with pytest.raises(ValueError, match="write clause"):
+            validate_cypher_readonly("CREATE (n:Hack {name: 'evil'})")
+
+    def test_rejects_merge(self) -> None:
+        with pytest.raises(ValueError, match="write clause"):
+            validate_cypher_readonly("MERGE (n:Entity {name: 'foo'})")
+
+    def test_rejects_delete(self) -> None:
+        with pytest.raises(ValueError, match="write clause"):
+            validate_cypher_readonly("MATCH (n) DELETE n")
+
+    def test_rejects_detach_delete(self) -> None:
+        with pytest.raises(ValueError, match="write clause"):
+            validate_cypher_readonly("MATCH (n) DETACH DELETE n")
+
+    def test_rejects_set(self) -> None:
+        with pytest.raises(ValueError, match="write clause"):
+            validate_cypher_readonly("MATCH (n) SET n.name = 'hacked'")
+
+    def test_rejects_remove(self) -> None:
+        with pytest.raises(ValueError, match="write clause"):
+            validate_cypher_readonly("MATCH (n) REMOVE n.name")
+
+    def test_rejects_drop(self) -> None:
+        with pytest.raises(ValueError, match="write clause"):
+            validate_cypher_readonly("DROP CONSTRAINT my_constraint")
+
+    def test_rejects_load_csv(self) -> None:
+        with pytest.raises(ValueError, match="write clause"):
+            validate_cypher_readonly(
+                "LOAD CSV FROM 'file:///data.csv' AS row CREATE (n {name: row[0]})"
+            )
+
+    def test_rejects_call_dbms(self) -> None:
+        with pytest.raises(ValueError, match="CALL dbms"):
+            validate_cypher_readonly("CALL dbms.security.changePassword('new')")
+
+    # --- Rejects multi-statement ---
+
+    def test_rejects_multi_statement(self) -> None:
+        with pytest.raises(ValueError, match="multiple statements"):
+            validate_cypher_readonly("MATCH (n) RETURN n; MATCH (m) RETURN m")
+
+    def test_allows_semicolon_at_end(self) -> None:
+        # Trailing semicolon without another statement is OK
+        result = validate_cypher_readonly("MATCH (n) RETURN n LIMIT 10;")
+        assert "MATCH" in result
+
+    # --- Empty query ---
+
+    def test_rejects_empty_query(self) -> None:
+        with pytest.raises(ValueError, match="Empty"):
+            validate_cypher_readonly("")
+
+    # --- Case insensitive ---
+
+    def test_rejects_case_insensitive_create(self) -> None:
+        with pytest.raises(ValueError, match="write clause"):
+            validate_cypher_readonly("match (n) create (m)")
+
+    def test_rejects_case_insensitive_delete(self) -> None:
+        with pytest.raises(ValueError, match="write clause"):
+            validate_cypher_readonly("MATCH (n) DeLeTe n")
+
+
+# ====================================================================
+# Fix 1 — Pipeline rejects write queries from LLM
+# ====================================================================
+
+
+class TestPipelineRejectsWrites:
+    """Pipeline should block write queries generated by the LLM."""
+
+    @patch("neo4j_graphrag_kg.rag.pipeline.text_to_cypher")
+    def test_pipeline_blocks_create(self, mock_t2c: MagicMock) -> None:
+        mock_t2c.return_value = "CREATE (n:Hack {x: 1})"
+        driver = MagicMock()
+
+        resp = ask(
+            "Drop the database",
+            driver=driver,
+            database="neo4j",
+            api_key="test-key",
+        )
+        assert isinstance(resp, RAGResponse)
+        assert "write clause" in resp.answer.lower()
+        assert resp.results == []
+
+    @patch("neo4j_graphrag_kg.rag.pipeline.text_to_cypher")
+    def test_pipeline_blocks_delete(self, mock_t2c: MagicMock) -> None:
+        mock_t2c.return_value = "MATCH (n) DETACH DELETE n"
+        driver = MagicMock()
+
+        resp = ask(
+            "Delete everything",
+            driver=driver,
+            database="neo4j",
+            api_key="test-key",
+        )
+        assert "write clause" in resp.answer.lower()
+
+
+# ====================================================================
+# Fix 3 — Error responses don't leak internal details
+# ====================================================================
+
+
+def _mock_settings(**overrides: Any) -> MagicMock:
+    s = MagicMock()
+    s.neo4j_uri = "bolt://localhost:7687"
+    s.neo4j_user = "neo4j"
+    s.neo4j_password = "password"
+    s.neo4j_database = "neo4j"
+    s.llm_provider = "anthropic"
+    s.llm_model = ""
+    s.llm_api_key = ""
+    s.cors_origins = ["http://localhost:8000"]
+    for k, v in overrides.items():
+        setattr(s, k, v)
+    return s
+
+
+class TestErrorResponseSanitization:
+    """Error responses must not contain exception class names or file paths."""
+
+    @patch("neo4j_graphrag_kg.web.app.get_driver")
+    @patch("neo4j_graphrag_kg.web.app.get_settings")
+    def test_graph_error_no_internal_details(
+        self, mock_settings: MagicMock, mock_get_driver: MagicMock
+    ) -> None:
+        settings = _mock_settings()
+        mock_settings.return_value = settings
+
+        driver = MagicMock()
+        session = MagicMock()
+        driver.session.return_value.__enter__ = MagicMock(return_value=session)
+        driver.session.return_value.__exit__ = MagicMock(return_value=False)
+        session.run.side_effect = Exception(
+            "ServiceUnavailable: Connection refused to bolt://localhost:7687"
+        )
+        mock_get_driver.return_value = driver
+
+        resp = client.get("/api/graph")
+        assert resp.status_code == 500
+        detail = resp.json()["detail"]
+        assert "bolt://" not in detail
+        assert "Connection refused" not in detail
+        assert "ServiceUnavailable" not in detail
+        assert detail == "Query execution failed"
+
+    @patch("neo4j_graphrag_kg.web.app.get_driver")
+    @patch("neo4j_graphrag_kg.web.app.get_settings")
+    def test_status_error_no_internal_details(
+        self, mock_settings: MagicMock, mock_get_driver: MagicMock
+    ) -> None:
+        settings = _mock_settings()
+        mock_settings.return_value = settings
+
+        driver = MagicMock()
+        session = MagicMock()
+        driver.session.return_value.__enter__ = MagicMock(return_value=session)
+        driver.session.return_value.__exit__ = MagicMock(return_value=False)
+        session.run.side_effect = RuntimeError(
+            "at C:\\Users\\user\\neo4j_client.py:42 failed to connect"
+        )
+        mock_get_driver.return_value = driver
+
+        resp = client.get("/api/status")
+        assert resp.status_code == 500
+        detail = resp.json()["detail"]
+        assert "C:\\Users" not in detail
+        assert "neo4j_client" not in detail
+        assert detail == "Service unavailable"
+
+
+# ====================================================================
+# Fix 5 — CORS restricts origins
+# ====================================================================
+
+
+class TestCORSSecurity:
+    """CORS should reject disallowed origins."""
+
+    def test_disallowed_origin_rejected(self) -> None:
+        resp = client.options(
+            "/api/graph",
+            headers={
+                "Origin": "http://evil.example.com",
+                "Access-Control-Request-Method": "GET",
+            },
+        )
+        assert resp.status_code == 400
+
+    def test_allowed_origin_accepted(self) -> None:
+        resp = client.options(
+            "/api/graph",
+            headers={
+                "Origin": "http://localhost:8000",
+                "Access-Control-Request-Method": "GET",
+            },
+        )
+        assert resp.status_code == 200
+        assert "access-control-allow-origin" in resp.headers
+
+
+# ====================================================================
+# Fix 6 — Entity endpoint uses CONTAINS not regex
+# ====================================================================
+
+
+class TestEntityEndpointSafety:
+    """Entity endpoint should use CONTAINS (not regex) for name lookup."""
+
+    @patch("neo4j_graphrag_kg.web.app.get_driver")
+    @patch("neo4j_graphrag_kg.web.app.get_settings")
+    def test_regex_metachar_does_not_crash(
+        self, mock_settings: MagicMock, mock_get_driver: MagicMock
+    ) -> None:
+        """Sending regex metacharacters should not cause errors."""
+        settings = _mock_settings()
+        mock_settings.return_value = settings
+
+        driver = MagicMock()
+        session = MagicMock()
+        driver.session.return_value.__enter__ = MagicMock(return_value=session)
+        driver.session.return_value.__exit__ = MagicMock(return_value=False)
+        session.run.return_value = []  # no results
+        mock_get_driver.return_value = driver
+
+        # These regex metacharacters would cause errors with =~ but
+        # are safe with CONTAINS
+        resp = client.get("/api/graph/entity/(.*)")
+        assert resp.status_code == 200
+
+        resp = client.get("/api/graph/entity/a{9999}")
+        assert resp.status_code == 200
+
+
+# ====================================================================
+# Fix 7 — LIMIT enforced on subgraph endpoints
+# ====================================================================
+
+
+class TestSubgraphLimits:
+    """Subgraph endpoints enforce max limits."""
+
+    @patch("neo4j_graphrag_kg.web.app.get_driver")
+    @patch("neo4j_graphrag_kg.web.app.get_settings")
+    def test_entity_respects_limit_param(
+        self, mock_settings: MagicMock, mock_get_driver: MagicMock
+    ) -> None:
+        settings = _mock_settings()
+        mock_settings.return_value = settings
+
+        driver = MagicMock()
+        session = MagicMock()
+        driver.session.return_value.__enter__ = MagicMock(return_value=session)
+        driver.session.return_value.__exit__ = MagicMock(return_value=False)
+        session.run.return_value = []
+        mock_get_driver.return_value = driver
+
+        resp = client.get("/api/graph/entity/Alice?limit=50")
+        assert resp.status_code == 200
+
+    def test_entity_rejects_over_max_limit(self) -> None:
+        """Limit > 1000 should be rejected by validation."""
+        resp = client.get("/api/graph/entity/Alice?limit=5000")
+        assert resp.status_code == 422
+
+    def test_document_rejects_over_max_limit(self) -> None:
+        resp = client.get("/api/graph/document/test?limit=5000")
+        assert resp.status_code == 422
+
+    def test_graph_rejects_over_max_limit(self) -> None:
+        resp = client.get("/api/graph?limit=5000")
+        assert resp.status_code == 422
