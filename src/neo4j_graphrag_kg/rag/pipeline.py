@@ -1,0 +1,166 @@
+"""RAG pipeline orchestrator: question → text2cypher → execute → answer.
+
+Ties together text2cypher and answer generation with retry logic.
+If Cypher execution fails, retries text2cypher once with the error.
+
+NEVER logs API keys or full LLM prompts containing user data.
+"""
+
+from __future__ import annotations
+
+import logging
+import time
+from typing import Any
+
+from neo4j import Driver
+
+from neo4j_graphrag_kg.rag.answer import RAGResponse, generate_answer
+from neo4j_graphrag_kg.rag.text2cypher import text_to_cypher
+
+logger = logging.getLogger(__name__)
+
+
+def _execute_cypher(
+    driver: Driver,
+    database: str,
+    cypher: str,
+) -> list[dict[str, Any]]:
+    """Execute a Cypher query and return results as a list of dicts.
+
+    Converts Neo4j types (Path, Node, Relationship) to strings for
+    JSON serialization.
+    """
+    with driver.session(database=database) as session:
+        result = session.run(cypher)
+        rows: list[dict[str, Any]] = []
+        for record in result:
+            row: dict[str, Any] = {}
+            for key in record.keys():
+                val = record[key]
+                # Convert Neo4j graph types to string representations
+                if hasattr(val, "nodes") and hasattr(val, "relationships"):
+                    # Path object
+                    row[key] = str(val)
+                elif hasattr(val, "element_id") and hasattr(val, "labels"):
+                    # Node
+                    row[key] = dict(val)
+                elif hasattr(val, "element_id") and hasattr(val, "type"):
+                    # Relationship
+                    row[key] = dict(val)
+                else:
+                    row[key] = val
+            rows.append(row)
+        return rows
+
+
+def ask(
+    question: str,
+    *,
+    driver: Driver,
+    database: str,
+    provider: str = "anthropic",
+    model: str = "",
+    api_key: str = "",
+    cypher_only: bool = False,
+) -> RAGResponse:
+    """Run the full RAG pipeline: question → Cypher → execute → answer.
+
+    Parameters
+    ----------
+    question:
+        Natural language question about the knowledge graph.
+    driver:
+        Neo4j driver instance.
+    database:
+        Neo4j database name.
+    provider / model / api_key:
+        LLM configuration (same as extractor settings).
+    cypher_only:
+        If True, generate Cypher but skip execution and answer generation.
+
+    Returns
+    -------
+    RAGResponse with question, cypher, results, answer, elapsed_s.
+    """
+    t0 = time.perf_counter()
+
+    logger.info("RAG question: %s", question)
+
+    # Step 1: Generate Cypher
+    cypher = text_to_cypher(
+        question,
+        driver=driver,
+        database=database,
+        provider=provider,
+        model=model,
+        api_key=api_key,
+    )
+    logger.info("Generated Cypher (%d chars)", len(cypher))
+
+    if cypher_only:
+        elapsed = time.perf_counter() - t0
+        return RAGResponse(
+            question=question,
+            cypher=cypher,
+            elapsed_s=round(elapsed, 2),
+        )
+
+    # Step 2: Execute Cypher (with retry on failure)
+    results: list[dict[str, Any]] = []
+    try:
+        results = _execute_cypher(driver, database, cypher)
+        logger.info("Cypher returned %d rows", len(results))
+    except Exception as exc:
+        logger.warning("Cypher execution failed: %s — retrying text2cypher", exc)
+        # Retry: regenerate Cypher with the error context
+        retry_question = (
+            f"{question}\n\n"
+            f"(Previous Cypher failed with error: {exc}. "
+            f"Previous query was: {cypher}. "
+            f"Please fix the query.)"
+        )
+        try:
+            cypher = text_to_cypher(
+                retry_question,
+                driver=driver,
+                database=database,
+                provider=provider,
+                model=model,
+                api_key=api_key,
+            )
+            logger.info("Retry generated Cypher (%d chars)", len(cypher))
+            results = _execute_cypher(driver, database, cypher)
+            logger.info("Retry Cypher returned %d rows", len(results))
+        except Exception as retry_exc:
+            logger.error("Retry also failed: %s", retry_exc)
+            elapsed = time.perf_counter() - t0
+            return RAGResponse(
+                question=question,
+                cypher=cypher,
+                results=[],
+                answer=(
+                    f"I was unable to query the graph. "
+                    f"The generated Cypher query failed: {retry_exc}"
+                ),
+                elapsed_s=round(elapsed, 2),
+            )
+
+    # Step 3: Generate answer
+    answer = generate_answer(
+        question,
+        cypher,
+        results,
+        provider=provider,
+        model=model,
+        api_key=api_key,
+    )
+
+    elapsed = time.perf_counter() - t0
+    logger.info("RAG pipeline completed in %.2fs", elapsed)
+    return RAGResponse(
+        question=question,
+        cypher=cypher,
+        results=results,
+        answer=answer,
+        elapsed_s=round(elapsed, 2),
+    )
