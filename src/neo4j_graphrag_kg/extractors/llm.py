@@ -287,6 +287,32 @@ class LLMExtractor(BaseExtractor):
             f"LLM call failed after {1 + self._max_retries} attempts"
         ) from last_error
 
+    # ---- Type validation ---------------------------------------------------
+
+    def _validate_entity_type(self, etype: str) -> str:
+        """Return *etype* if allowed, otherwise remap to ``"Concept"``."""
+        if not self._entity_types:
+            return etype
+        if etype in self._entity_types:
+            return etype
+        logger.warning(
+            "Entity type %r not in allowed list; remapping to 'Concept'",
+            etype,
+        )
+        return "Concept"
+
+    def _validate_relationship_type(self, rtype: str) -> str:
+        """Return *rtype* if allowed, otherwise remap to ``"RELATED_TO"``."""
+        if not self._relationship_types:
+            return rtype
+        if rtype in self._relationship_types:
+            return rtype
+        logger.warning(
+            "Relationship type %r not in allowed list; remapping to 'RELATED_TO'",
+            rtype,
+        )
+        return "RELATED_TO"
+
     # ---- Main extract method ---------------------------------------------
 
     def extract(
@@ -323,6 +349,7 @@ class LLMExtractor(BaseExtractor):
             etype = str(ent.get("type", "Term")).strip()
             if not name:
                 continue
+            etype = self._validate_entity_type(etype)
             entities.append(ExtractedEntity(
                 name=name,
                 type=etype,
@@ -336,6 +363,7 @@ class LLMExtractor(BaseExtractor):
             rtype = str(rel.get("type", "RELATED_TO")).strip()
             if not src or not tgt:
                 continue
+            rtype = self._validate_relationship_type(rtype)
             relationships.append(ExtractedRelationship(
                 source=src,
                 target=tgt,
