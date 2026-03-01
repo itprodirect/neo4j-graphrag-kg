@@ -44,9 +44,12 @@ _CAP_PHRASE_RE = re.compile(
 # Precompiled known-term patterns with word boundaries to avoid substring false positives.
 # Terms are matched longest-first so multi-word terms are considered before short acronyms.
 _KNOWN_TERMS_ORDERED = tuple(sorted(KNOWN_TERMS, key=len, reverse=True))
+_TERM_WORD_SEP = r"\s+"
 _KNOWN_TERM_PATTERNS: dict[str, re.Pattern[str]] = {
     term: re.compile(
-        rf"(?<!\w){r'\s+'.join(re.escape(part) for part in term.split())}(?!\w)",
+        r"(?<!\w)"
+        + _TERM_WORD_SEP.join(re.escape(part) for part in term.split())
+        + r"(?!\w)",
         re.IGNORECASE,
     )
     for term in _KNOWN_TERMS_ORDERED
