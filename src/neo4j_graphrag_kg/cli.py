@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 import typer
 
@@ -136,6 +136,53 @@ def ingest(
         )
     except Exception as exc:
         typer.echo(f"Ingestion failed: {exc}", err=True)
+        raise typer.Exit(code=1)
+    finally:
+        close_driver()
+
+
+@app.command()
+def query(
+    cypher: str = typer.Option(..., "--cypher", help="Cypher query to execute"),
+) -> None:
+    """Run a read-only Cypher query and print results as a table."""
+    settings = get_settings()
+    driver = get_driver(settings)
+    try:
+        with driver.session(database=settings.neo4j_database) as session:
+            result = session.run(cypher)
+            records = [dict(r) for r in result]
+
+        if not records:
+            typer.echo("(no results)")
+            return
+
+        # Build simple table
+        keys = list(records[0].keys())
+        # Compute column widths
+        col_widths = {k: len(k) for k in keys}
+        str_rows: list[dict[str, str]] = []
+        for rec in records:
+            sr: dict[str, str] = {}
+            for k in keys:
+                val = rec[k]
+                s = str(val) if val is not None else ""
+                sr[k] = s
+                col_widths[k] = max(col_widths[k], len(s))
+            str_rows.append(sr)
+
+        # Header
+        header = " | ".join(k.ljust(col_widths[k]) for k in keys)
+        sep = "-+-".join("-" * col_widths[k] for k in keys)
+        typer.echo(header)
+        typer.echo(sep)
+        for sr in str_rows:
+            line = " | ".join(sr[k].ljust(col_widths[k]) for k in keys)
+            typer.echo(line)
+        typer.echo(f"\n({len(str_rows)} row{'s' if len(str_rows) != 1 else ''})")
+
+    except Exception as exc:
+        typer.echo(f"Query failed: {exc}", err=True)
         raise typer.Exit(code=1)
     finally:
         close_driver()
