@@ -81,9 +81,10 @@ pip install -e ".[dev,all]"
 ### 4. Verify Everything Works
 
 ```bash
-kg ping        # ✅ Neo4j is reachable
-kg init-db     # ✅ Creates constraints & indexes
-kg status      # ✅ Shows Neo4j version + counts
+pip install -e ".[dev]"
+python -m pytest -q
+
+bash scripts/smoke.sh
 ```
 
 ---

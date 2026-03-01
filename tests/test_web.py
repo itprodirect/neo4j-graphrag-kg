@@ -338,7 +338,11 @@ class TestAskEndpoint:
 
     def test_ask_invalid_content_type_returns_422(self) -> None:
         """Non-JSON request should fail."""
-        resp = client.post("/api/ask", data="not json")
+        resp = client.post(
+            "/api/ask",
+            content="not json",
+            headers={"content-type": "text/plain"},
+        )
         assert resp.status_code == 422
 
 
