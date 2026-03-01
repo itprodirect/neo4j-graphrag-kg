@@ -148,7 +148,8 @@ async def graph_full(limit: int = Query(200, ge=1, le=5000)) -> JSONResponse:
         data = _graph_query(cypher)
         return JSONResponse(data)
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc))
+        logger.error("GET /api/graph failed: %s", exc)
+        raise HTTPException(status_code=500, detail="Query execution failed")
 
 
 @app.get("/api/graph/entity/{name}")
@@ -164,7 +165,8 @@ async def graph_entity(name: str) -> JSONResponse:
         data = _graph_query(cypher, params)
         return JSONResponse(data)
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc))
+        logger.error("GET /api/graph/entity failed: %s", exc)
+        raise HTTPException(status_code=500, detail="Query execution failed")
 
 
 @app.get("/api/graph/document/{doc_id}")
@@ -180,7 +182,8 @@ async def graph_document(doc_id: str) -> JSONResponse:
         data = _graph_query(cypher, params)
         return JSONResponse(data)
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc))
+        logger.error("GET /api/graph/document failed: %s", exc)
+        raise HTTPException(status_code=500, detail="Query execution failed")
 
 
 class AskRequest(BaseModel):
@@ -218,7 +221,8 @@ async def ask_endpoint(req: AskRequest) -> JSONResponse:
             "elapsed_s": response.elapsed_s,
         })
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc))
+        logger.error("POST /api/ask failed: %s", exc)
+        raise HTTPException(status_code=500, detail="RAG query failed")
 
 
 @app.get("/api/status")
@@ -249,4 +253,5 @@ async def status_endpoint() -> JSONResponse:
             "relationships": counts["rels"] if counts else 0,
         })
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc))
+        logger.error("GET /api/status failed: %s", exc)
+        raise HTTPException(status_code=500, detail="Service unavailable")
