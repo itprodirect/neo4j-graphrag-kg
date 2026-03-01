@@ -322,7 +322,7 @@ class TestPipelineAsk:
             api_key="test-key",
             cypher_only=True,
         )
-        assert resp.cypher == "MATCH (n) RETURN n"
+        assert resp.cypher == "MATCH (n) RETURN n LIMIT 100"
         assert resp.results == []
         assert resp.answer == ""
 

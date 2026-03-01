@@ -119,15 +119,72 @@ Q: Show me all relationships for entity X
 MATCH (e:Entity)-[r]->(other) WHERE e.name =~ '(?i).*X.*' RETURN e.name, type(r), r.type, other.name LIMIT 50
 
 Rules:
+- Generate READ-ONLY Cypher queries only. NEVER generate CREATE, MERGE, DELETE, SET, REMOVE, or DROP statements.
 - Return ONLY the Cypher query, no explanation, no markdown fences.
 - Use case-insensitive regex matching (=~) for entity name lookups.
-- Always LIMIT results to avoid huge result sets unless the question implies "all".
+- Always include a LIMIT clause to avoid huge result sets.
 - Do NOT use APOC procedures.
 """
 
 _USER_PROMPT = "Question: {question}"
 
 _FENCE_RE = re.compile(r"```(?:cypher)?\s*\n?(.*?)\n?\s*```", re.DOTALL)
+
+# ---------------------------------------------------------------------------
+# Read-only Cypher validation
+# ---------------------------------------------------------------------------
+
+_WRITE_CLAUSES_RE = re.compile(
+    r"\b(CREATE|MERGE|DELETE|DETACH\s+DELETE|SET|REMOVE|DROP|LOAD\s+CSV)\b",
+    re.IGNORECASE,
+)
+_DBMS_CALL_RE = re.compile(r"\bCALL\s+dbms\b", re.IGNORECASE)
+_MULTI_STATEMENT_RE = re.compile(r";\s*\S")
+_HAS_LIMIT_RE = re.compile(r"\bLIMIT\b", re.IGNORECASE)
+
+_DEFAULT_RAG_LIMIT = 100
+
+
+def validate_cypher_readonly(cypher: str) -> str:
+    """Validate that a Cypher query is read-only and inject LIMIT if missing.
+
+    Raises ``ValueError`` if the query contains write clauses, admin calls,
+    or multiple statements (semicolon-separated).
+
+    Returns the (possibly LIMIT-injected) Cypher string.
+    """
+    stripped = cypher.strip()
+    if not stripped:
+        raise ValueError("Empty Cypher query")
+
+    # Reject write clauses
+    m = _WRITE_CLAUSES_RE.search(stripped)
+    if m:
+        raise ValueError(
+            f"LLM-generated Cypher contains a write clause ({m.group()!r}) "
+            "and was blocked for safety. Only read-only queries are allowed."
+        )
+
+    # Reject admin procedure calls
+    if _DBMS_CALL_RE.search(stripped):
+        raise ValueError(
+            "LLM-generated Cypher contains a 'CALL dbms' admin call "
+            "and was blocked for safety."
+        )
+
+    # Reject multi-statement queries
+    if _MULTI_STATEMENT_RE.search(stripped):
+        raise ValueError(
+            "LLM-generated Cypher contains multiple statements (semicolons) "
+            "and was blocked for safety."
+        )
+
+    # Inject LIMIT if missing
+    if not _HAS_LIMIT_RE.search(stripped):
+        stripped = stripped.rstrip().rstrip(";")
+        stripped += f" LIMIT {_DEFAULT_RAG_LIMIT}"
+
+    return stripped
 
 
 def _strip_cypher(raw: str) -> str:

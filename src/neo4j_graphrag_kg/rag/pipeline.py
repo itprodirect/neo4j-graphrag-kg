@@ -14,8 +14,10 @@ from typing import Any
 
 from neo4j import Driver
 
+import neo4j as _neo4j
+
 from neo4j_graphrag_kg.rag.answer import RAGResponse, generate_answer
-from neo4j_graphrag_kg.rag.text2cypher import text_to_cypher
+from neo4j_graphrag_kg.rag.text2cypher import text_to_cypher, validate_cypher_readonly
 
 logger = logging.getLogger(__name__)
 
@@ -25,13 +27,17 @@ def _execute_cypher(
     database: str,
     cypher: str,
 ) -> list[dict[str, Any]]:
-    """Execute a Cypher query and return results as a list of dicts.
+    """Execute a **read-only** Cypher query and return results as dicts.
+
+    Uses a read-access session so the Neo4j server will also reject any
+    write operations that slip through the application-level validator.
 
     Converts Neo4j types (Path, Node, Relationship) to strings for
     JSON serialization.
     """
-    with driver.session(database=database) as session:
-        result = session.run(cypher)
+
+    def _run_query(tx: Any) -> list[dict[str, Any]]:
+        result = tx.run(cypher)
         rows: list[dict[str, Any]] = []
         for record in result:
             row: dict[str, Any] = {}
@@ -51,6 +57,12 @@ def _execute_cypher(
                     row[key] = val
             rows.append(row)
         return rows
+
+    with driver.session(
+        database=database,
+        default_access_mode=_neo4j.READ_ACCESS,
+    ) as session:
+        return session.execute_read(_run_query)
 
 
 def ask(
@@ -97,6 +109,20 @@ def ask(
     )
     logger.info("Generated Cypher (%d chars)", len(cypher))
 
+    # Step 1b: Validate Cypher is read-only
+    try:
+        cypher = validate_cypher_readonly(cypher)
+    except ValueError as ve:
+        logger.warning("Cypher validation failed: %s", ve)
+        elapsed = time.perf_counter() - t0
+        return RAGResponse(
+            question=question,
+            cypher=cypher,
+            results=[],
+            answer=str(ve),
+            elapsed_s=round(elapsed, 2),
+        )
+
     if cypher_only:
         elapsed = time.perf_counter() - t0
         return RAGResponse(
@@ -128,6 +154,8 @@ def ask(
                 model=model,
                 api_key=api_key,
             )
+            # Validate the retry too
+            cypher = validate_cypher_readonly(cypher)
             logger.info("Retry generated Cypher (%d chars)", len(cypher))
             results = _execute_cypher(driver, database, cypher)
             logger.info("Retry Cypher returned %d rows", len(results))
