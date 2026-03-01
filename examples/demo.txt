@@ -1,0 +1,31 @@
+Graph databases have transformed how organisations model and query connected data.
+Neo4j, the most widely adopted graph database, stores data as nodes and relationships
+in a property graph model.  Every node can carry labels and properties, and every
+relationship has a type, a direction, and its own properties.  Cypher, the declarative
+query language created for Neo4j, makes it natural to express graph patterns such as
+shortest paths, neighbourhood traversals, and pattern matching.
+
+Knowledge graphs build on top of graph databases by adding semantic structure.  A
+knowledge graph represents real-world entities — people, organisations, concepts,
+documents — and the relationships between them.  When a knowledge graph is stored in
+Neo4j, Cypher queries can traverse dozens of hops in milliseconds, uncovering hidden
+connections that relational joins would struggle to find.  Organisations use knowledge
+graphs for fraud detection, drug discovery, recommendation engines, and enterprise
+search.
+
+GraphRAG is an emerging pattern that combines knowledge graphs with large language
+models.  In a GraphRAG pipeline the retrieval step queries a knowledge graph instead
+of — or in addition to — a flat vector store.  This gives the language model structured
+context: not just similar text chunks, but entities, relationships, and the sub-graph
+around the user's question.  Vector search still plays an important role: embeddings
+are stored on nodes or chunks so that semantic similarity can be used alongside graph
+traversal.
+
+Building a GraphRAG system on Neo4j typically involves several stages.  First, source
+documents are chunked into manageable pieces.  Next, an extractor — which may be an
+LLM, a named-entity recogniser, or a simple heuristic — identifies entities and
+relationships within each chunk.  These are then written to Neo4j as nodes (Document,
+Chunk, Entity) and relationships (HAS_CHUNK, MENTIONS, RELATED_TO).  Finally, a query
+layer combines vector search with Cypher traversal to retrieve the most relevant
+context for the language model.  The whole pipeline must be idempotent so that
+re-ingesting a document updates rather than duplicates the graph.
