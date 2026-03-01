@@ -18,6 +18,7 @@ dev = [
     "pytest>=7.0",
     "ruff>=0.4",
     "mypy>=1.0",
+    "httpx>=0.27.0",
 ]
 anthropic = [
     "anthropic>=0.39.0",
@@ -27,6 +28,13 @@ openai = [
 ]
 llm = [
     "neo4j-graphrag-kg[anthropic,openai]",
+]
+web = [
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.32.0",
+]
+all = [
+    "neo4j-graphrag-kg[llm,web]",
 ]
 
 [project.scripts]
