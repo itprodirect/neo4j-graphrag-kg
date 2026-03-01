@@ -4,8 +4,6 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Any, Optional
-
 import typer
 
 from neo4j_graphrag_kg.config import get_settings
