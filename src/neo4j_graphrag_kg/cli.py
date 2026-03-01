@@ -104,6 +104,18 @@ def ingest(
     source: str = typer.Option("", "--source", help="Source URL or reference"),
     chunk_size: int = typer.Option(1000, "--chunk-size", help="Chars per chunk"),
     chunk_overlap: int = typer.Option(150, "--chunk-overlap", help="Overlap between chunks"),
+    extractor_name: str = typer.Option(
+        "", "--extractor", help="Extractor: 'simple' or 'llm' (default: from config)",
+    ),
+    provider: str = typer.Option(
+        "", "--provider", help="LLM provider: 'anthropic' or 'openai' (default: from config)",
+    ),
+    model: str = typer.Option(
+        "", "--model", help="LLM model name (default: from config)",
+    ),
+    entity_types: str = typer.Option(
+        "", "--entity-types", help="Comma-separated entity types for LLM extraction",
+    ),
 ) -> None:
     """Ingest a text file: chunk → extract entities → upsert to Neo4j."""
     _setup_logging()
@@ -115,6 +127,47 @@ def ingest(
     from neo4j_graphrag_kg.ingest import ingest_file
 
     settings = get_settings()
+
+    # Resolve extractor type: CLI flag > config > default
+    ext_type = extractor_name or settings.extractor_type or "simple"
+
+    # Build extractor instance
+    ext_instance = None
+    if ext_type == "llm":
+        llm_provider = provider or settings.llm_provider
+        llm_model = model or settings.llm_model
+        api_key = settings.llm_api_key
+
+        if not api_key:
+            typer.echo(
+                "LLM_API_KEY is required when using --extractor llm. "
+                "Set it in .env or as an environment variable.",
+                err=True,
+            )
+            raise typer.Exit(code=1)
+
+        e_types = (
+            [t.strip() for t in entity_types.split(",") if t.strip()]
+            if entity_types
+            else settings.entity_types
+        )
+
+        from neo4j_graphrag_kg.extractors import get_extractor
+        ext_instance = get_extractor(
+            "llm",
+            provider=llm_provider,
+            model=llm_model or None,
+            api_key=api_key,
+            entity_types=e_types,
+            relationship_types=settings.relationship_types,
+        )
+    elif ext_type == "simple":
+        # Use legacy path (extractor=None) for exact backward compat
+        ext_instance = None
+    else:
+        typer.echo(f"Unknown extractor: {ext_type!r}. Use 'simple' or 'llm'.", err=True)
+        raise typer.Exit(code=1)
+
     driver = get_driver(settings)
     try:
         summary = ingest_file(
@@ -126,6 +179,7 @@ def ingest(
             source=source,
             chunk_size=chunk_size,
             chunk_overlap=chunk_overlap,
+            extractor=ext_instance,
         )
         typer.echo(
             f"Ingested '{doc_id}': {summary['chunks']} chunks, "
