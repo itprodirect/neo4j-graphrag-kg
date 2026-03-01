@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+import logging
+from pathlib import Path
+from typing import Optional
+
 import typer
 
 from neo4j_graphrag_kg.config import get_settings
@@ -9,6 +13,15 @@ from neo4j_graphrag_kg.neo4j_client import get_driver, close_driver
 from neo4j_graphrag_kg.schema import ALL_STATEMENTS
 
 app = typer.Typer(help="Neo4j Knowledge-Graph CLI", no_args_is_help=True)
+
+
+def _setup_logging() -> None:
+    """Configure root logger for CLI usage (INFO level)."""
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s  %(name)-30s  %(levelname)-5s  %(message)s",
+        datefmt="%H:%M:%S",
+    )
 
 
 @app.command()
@@ -80,6 +93,49 @@ def status() -> None:
 
     except Exception as exc:
         typer.echo(f"Status check failed: {exc}", err=True)
+        raise typer.Exit(code=1)
+    finally:
+        close_driver()
+
+
+@app.command()
+def ingest(
+    input: Path = typer.Option(..., "--input", help="Path to a UTF-8 text file"),
+    doc_id: str = typer.Option(..., "--doc-id", help="Unique document identifier"),
+    title: str = typer.Option(..., "--title", help="Document title"),
+    source: str = typer.Option("", "--source", help="Source URL or reference"),
+    chunk_size: int = typer.Option(1000, "--chunk-size", help="Chars per chunk"),
+    chunk_overlap: int = typer.Option(150, "--chunk-overlap", help="Overlap between chunks"),
+) -> None:
+    """Ingest a text file: chunk → extract entities → upsert to Neo4j."""
+    _setup_logging()
+
+    if not input.is_file():
+        typer.echo(f"File not found: {input}", err=True)
+        raise typer.Exit(code=1)
+
+    from neo4j_graphrag_kg.ingest import ingest_file
+
+    settings = get_settings()
+    driver = get_driver(settings)
+    try:
+        summary = ingest_file(
+            driver,
+            settings.neo4j_database,
+            input_path=input,
+            doc_id=doc_id,
+            title=title,
+            source=source,
+            chunk_size=chunk_size,
+            chunk_overlap=chunk_overlap,
+        )
+        typer.echo(
+            f"Ingested '{doc_id}': {summary['chunks']} chunks, "
+            f"{summary['entities']} entities, {summary['edges']} edges "
+            f"in {summary['elapsed_s']}s"
+        )
+    except Exception as exc:
+        typer.echo(f"Ingestion failed: {exc}", err=True)
         raise typer.Exit(code=1)
     finally:
         close_driver()
