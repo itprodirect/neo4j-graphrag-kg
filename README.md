@@ -2,40 +2,24 @@
 
 Neo4j-first knowledge graph tooling for GraphRAG pipelines.
 
-This repository is intentionally practical: clear CLI commands, deterministic IDs,
-and batched graph writes. No framework maze, no magic.
+Lean stack, explicit contracts, practical CLI. Fancy where useful, boring where it should be.
 
-## Project Status (as of 2026-03-04)
+## At a Glance (as of 2026-03-04)
 
-- Stage: `v1 stable foundation`, `v2 planned`, execution in progress.
-- Test status: `186 passed, 11 skipped` (`pytest -q` on 2026-03-04).
-- Recent additions:
-  - Durable staged ingest jobs (`kg ingest`, `kg ingest-status`, `kg ingest-run`)
-  - Read-only query safety defaults with `--allow-write` escape hatch
-  - Synthetic fraud/E&O investigation dataset for realistic demos
-- Current blockers:
-  - GitHub CLI token is invalid locally, so issue auto-creation is prepared but not executed.
+| Area | Status |
+|---|---|
+| Product stage | `v1 foundation stable`, `v2 plan approved` |
+| Test run | `186 passed, 11 skipped` (`pytest -q`) |
+| Recent work | Durable ingest jobs, safer query defaults, synthetic investigation dataset |
+| Next focus | Phase 0/1 v2 correctness and CI quality gates |
 
-## What It Does Today
+## What You Can Do Today
 
-1. Ingests text documents into a Neo4j graph.
-2. Chunks text, extracts entities/relationships (heuristic or LLM), and upserts in batches.
-3. Supports ad-hoc Cypher querying from CLI.
-4. Supports GraphRAG-style natural-language Q/A (`kg ask`).
-5. Serves a lightweight graph explorer web UI (`kg serve`).
-
-## Current CLI Surface
-
-- `kg ping` - verify Neo4j connectivity.
-- `kg init-db` - create constraints and indexes (idempotent).
-- `kg status` - show Neo4j version, counts, constraints, indexes.
-- `kg ingest` - queue and optionally run a staged ingest job.
-- `kg ingest-status` - inspect durable ingest job state.
-- `kg ingest-run` - run a queued ingest job by ID.
-- `kg query` - run Cypher (read-only validated by default).
-- `kg ask` - natural language question to Cypher and answer flow.
-- `kg serve` - run web UI/API.
-- `kg reset` - destructive reset (requires `--confirm`).
+- Ingest documents into a Neo4j knowledge graph.
+- Extract entities and relationships with either heuristic or LLM pipelines.
+- Run read-safe Cypher from CLI.
+- Ask natural-language questions through GraphRAG (`kg ask`).
+- Explore graph structure in a web UI (`kg serve`).
 
 ## Quickstart
 
@@ -74,11 +58,26 @@ kg ingest --input examples/demo.txt --doc-id demo --title "Demo"
 kg query --cypher "MATCH (e:Entity) RETURN e.name ORDER BY e.name LIMIT 25"
 ```
 
+## CLI Reference
+
+| Command | Purpose |
+|---|---|
+| `kg ping` | Verify Neo4j connectivity |
+| `kg init-db` | Create constraints/indexes (idempotent) |
+| `kg status` | Show database status and schema summary |
+| `kg ingest` | Queue and optionally run staged ingest job |
+| `kg ingest-status` | Inspect durable ingest job state |
+| `kg ingest-run` | Run queued ingest job by ID |
+| `kg query` | Execute Cypher (read-only validated by default) |
+| `kg ask` | Natural language question -> Cypher -> answer |
+| `kg serve` | Start web UI/API |
+| `kg reset` | Drop graph data (requires `--confirm`) |
+
 ## Synthetic Investigation Dataset
 
-For fraud, misrepresentation, and E&O style scenarios:
+For fraud, misrepresentation, and E&O-style scenarios:
 
-- Dataset docs: `examples/synthetic_claims_network/`
+- Dataset: `examples/synthetic_claims_network/`
 - Query pack: `examples/synthetic_claims_network/investigator_queries.md`
 - Ingest script: `scripts/ingest-synthetic-claims.ps1`
 
@@ -94,37 +93,45 @@ powershell -NoProfile -File scripts/ingest-synthetic-claims.ps1 -Extractor llm -
 
 ## Architecture Snapshot
 
-- Package layout: `src/neo4j_graphrag_kg/`
-- Core modules:
-  - `config.py` for environment settings
-  - `neo4j_client.py` for driver lifecycle
-  - `ingest.py` for staged pipeline and durable jobs
-  - `extractors/` for `simple` and `llm` extractor implementations
-  - `upsert.py` for batched `UNWIND ... MERGE` writes
-  - `rag/` for text2cypher and answer pipeline
-  - `web/` for FastAPI + static graph UI
+```text
+Text file -> chunk -> extract -> normalize IDs -> batched upsert -> Neo4j
+                                             \-> ask/query/web
+```
+
+Core modules live in `src/neo4j_graphrag_kg/`:
+
+- `config.py` (settings)
+- `neo4j_client.py` (driver lifecycle)
+- `ingest.py` (staged pipeline + durable jobs)
+- `extractors/` (`simple`, `llm`)
+- `upsert.py` (batched writes)
+- `rag/` (text2cypher + answer)
+- `web/` (FastAPI + static UI)
 
 ## Documentation Map
 
-- Architecture and troubleshooting: `docs/DEV_NOTES.md`
+- Developer notes: `docs/DEV_NOTES.md`
 - Engineering review snapshot: `docs/CODE_REVIEW.md`
-- Build history and status log: `docs/SESSION_LOG.md`
+- Session/build history: `docs/SESSION_LOG.md`
 - V2 blueprint: `docs/V2_REBUILD_BLUEPRINT.md`
 - V2 phased roadmap: `docs/V2_ROADMAP.md`
 - V2 issue backlog: `docs/V2_GITHUB_ISSUES.md`
 
 ## Roadmap
 
-### Near-term (active)
+### Now
 
-1. Land v2 phase 0 and phase 1 work items:
-   - relationship direction correctness
-   - re-ingest reconciliation
-   - typed service contracts
+1. Execute v2 phase 0 and phase 1 correctness items.
 2. Enforce CI quality gates (`ruff`, `mypy`, Neo4j integration).
-3. Improve evidence-rich RAG response contract (citations + confidence).
+3. Upgrade RAG response contract with citations and confidence signals.
 
-### Full plan
+### Next
+
+- Improve onboarding diagnostics (`kg doctor`).
+- Add integrity diagnostics (`kg check`).
+- Expand investigation workflow in web UI.
+
+### Full Plan
 
 See:
 
@@ -134,13 +141,13 @@ See:
 
 ## Contributing and Commit Style
 
-Small, descriptive commits are preferred:
+Prefer simple, reviewable commits:
 
 - `feat(ingest): add reconciliation mode skeleton`
 - `fix(rag): block unsafe call patterns`
 - `docs(v2): clarify phase exit criteria`
 
-One behavior change plus tests per commit is the happy path.
+One behavioral change plus tests per commit is the default.
 
 ## License
 
@@ -148,4 +155,4 @@ MIT
 
 ---
 
-Built by humans and AI, with useful output as the only vanity metric.
+Built by humans and AI. Measured by usefulness, not adjectives.

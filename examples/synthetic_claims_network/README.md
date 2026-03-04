@@ -1,14 +1,16 @@
 # Synthetic Claims Network Dataset
 
-A synthetic, investigation-friendly corpus for demonstrating graph-powered detection
+Synthetic, investigation-friendly corpus for demonstrating graph-powered detection
 of fraud, misrepresentation, and broker E&O risk.
 
 ## Dataset Status (as of 2026-03-04)
 
-- Scenario docs: complete.
-- Ingest helper script: complete.
-- Investigator query starter pack: complete.
-- Best use: demos, workshops, and regression-style retrieval tests.
+| Item | Status |
+|---|---|
+| Scenario docs | Complete |
+| Ingest helper script | Complete |
+| Investigator query pack | Complete |
+| Intended use | Demo, workshops, retrieval testing |
 
 ## Scenario Summary
 
@@ -22,14 +24,14 @@ The corpus models a commercial property claim ecosystem:
 
 Embedded risk patterns:
 
-- Policy application misrepresentation.
-- Duplicate invoice identifiers.
-- Shared remit account across vendors.
-- Vendor ownership overlap.
-- Cross-claim linkage signals.
-- Broker E&O exposure.
+- Policy application misrepresentation
+- Duplicate invoice identifiers
+- Shared remit account across vendors
+- Vendor ownership overlap
+- Cross-claim linkage signals
+- Broker E&O exposure
 
-## Files
+## File Index
 
 - `01_policy_application.txt`
 - `02_underwriting_inspection.txt`
@@ -59,16 +61,16 @@ powershell -NoProfile -File scripts/ingest-synthetic-claims.ps1 -Extractor llm -
 
 ## Why Graph Helps
 
-Graph modeling simplifies patterns that are awkward in row-based systems:
+Graph modeling makes these patterns easier to surface than row-first models:
 
 - Multi-hop linkage paths (person -> vendor -> bank account -> claim)
 - Cross-document contradiction checks
 - Shared ownership and payment flow traces
-- Ring-like high-degree entities
+- Ring-like high-degree entity discovery
 
 ## Notes
 
-- This dataset is synthetic and safe for demos.
-- No real customer data or production identifiers are used.
+- Dataset is synthetic and demo-safe.
+- No real customer data or production identifiers are included.
 
-For starter Cypher queries, see `investigator_queries.md`.
+See `investigator_queries.md` for starter Cypher.

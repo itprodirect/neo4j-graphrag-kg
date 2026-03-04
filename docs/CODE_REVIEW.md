@@ -1,6 +1,6 @@
 # Engineering Review Snapshot
 
-A current-state review of the repository, updated for the latest implementation status.
+Current-state review for maintainers.
 
 ## Review Date
 
@@ -8,66 +8,66 @@ A current-state review of the repository, updated for the latest implementation 
 
 ## Executive Summary
 
-The repo is a strong v1 foundation for Neo4j-first GraphRAG workflows.
+The repo is a strong v1 base for Neo4j-first GraphRAG.
 
-What is strong:
+Strengths:
 
-- Clear module boundaries and pragmatic CLI surface.
-- Deterministic IDs and batched graph writes.
-- Broad test coverage with fast local runs.
-- Security posture above typical early-stage baselines.
+- Clear module boundaries and practical CLI surface.
+- Deterministic IDs and batched write patterns.
+- Broad test suite with quick local feedback.
+- Security defaults ahead of many early-stage projects.
 
-What still needs focused work:
+Priority gaps:
 
-- Directional relationship correctness through extraction and persistence.
+- Relationship direction correctness in staged extraction writes.
 - Re-ingest reconciliation for changed source content.
-- CI quality gate enforcement for lint/type/integration.
-- Citation-rich RAG response contracts for trust and auditability.
+- CI enforcement for lint/type/integration quality gates.
+- Citation-rich RAG output contracts for trust and auditability.
 
-## Status of Prior Findings
+## Prior Findings Status
 
-| Finding | Previous Status | Current Status |
+| Finding | Previous | Current |
 |---|---|---|
 | `Document.created_at` mutated on re-ingest | Open | Fixed |
 | Transient Neo4j write retry missing | Open | Fixed |
-| `kg query` write safety default | Open | Fixed (`--allow-write` escape hatch) |
+| `kg query` write-safety default | Open | Fixed (`--allow-write` escape hatch) |
 | Durable staged ingest job state | Planned | Implemented |
 | CI with Neo4j integration service | Open | Open |
-| Strict mypy/ruff in CI | Open | Open |
+| Strict `mypy` and `ruff` CI gate | Open | Open |
 
 ## Strengths to Preserve
 
 1. `UNWIND ... MERGE` write contract in `upsert.py`.
-2. Typed extractor abstractions in `extractors/`.
-3. Practical CLI workflows and operational command naming.
-4. Minimal dependency footprint for core functionality.
+2. Extractor abstractions in `extractors/`.
+3. CLI ergonomics and operational command naming.
+4. Minimal core dependency strategy.
 
-## Risk Register (Current)
+## Risk Register
 
 ### P0
 
-1. Directionality loss risk for typed relationships in staged extraction path.
-2. Re-ingest of changed documents may leave stale artifacts.
+1. Potential directionality loss for typed relationships.
+2. Potential stale graph artifacts after changed-source re-ingest.
 
 ### P1
 
-1. Missing hard CI gate on lint and type checks.
-2. Integration tests not consistently exercised in CI runtime.
-3. Web/API request handlers can block under heavier concurrent load.
+1. Missing hard CI gate for lint and type checks.
+2. Neo4j integration tests not consistently run in CI.
+3. Synchronous web path can bottleneck under load.
 
 ### P2
 
-1. Limited observability around throughput and retry behavior.
-2. RAG response lacks structured citations/confidence output.
+1. Limited structured observability around throughput/retries.
+2. RAG output lacks structured citation/confidence fields.
 
 ## Recommended Next Moves
 
-1. Execute v2 phase 0 and phase 1 backlog.
-2. Add reconciliation mode and relationship direction regression tests first.
-3. Enforce CI gates (`ruff`, `mypy`, Neo4j-backed integration job).
-4. Upgrade RAG answer contract with citations and insufficiency signaling.
+1. Execute phase 0 and phase 1 v2 backlog items.
+2. Land directionality + reconciliation work before broader feature expansion.
+3. Add CI gates for `ruff`, `mypy`, and Neo4j integration workflow.
+4. Upgrade RAG contract to include evidence and insufficiency signaling.
 
-## Tracking References
+## Tracking Docs
 
 - `docs/V2_REBUILD_BLUEPRINT.md`
 - `docs/V2_ROADMAP.md`

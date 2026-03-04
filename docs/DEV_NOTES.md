@@ -2,78 +2,81 @@
 
 Technical notes for maintainers and contributors.
 
-## Status Snapshot (as of 2026-03-04)
+## Snapshot (as of 2026-03-04)
 
-- Runtime surface is stable for v1 workflows.
-- Durable ingest jobs are implemented.
-- Read-only Cypher safety defaults are in place for query paths.
-- v2 blueprint and roadmap are documented in `docs/V2_*.md`.
+| Topic | Status |
+|---|---|
+| Runtime surface | Stable for v1 workflows |
+| Durable ingest jobs | Implemented |
+| Query safety defaults | Implemented |
+| v2 planning docs | Implemented (`docs/V2_*.md`) |
+| v2 refactor execution | Planned |
 
-## Core Architecture
-
-Pipeline flow:
+## Core Flow
 
 ```text
 Text file -> chunk -> extract -> normalize IDs -> batched upsert -> Neo4j
 ```
 
-Major modules:
+## Module Guide
 
-- `config.py`: environment-backed settings (`python-dotenv`)
-- `neo4j_client.py`: singleton Neo4j driver lifecycle
-- `schema.py`: Neo4j 5+ constraints and indexes (`IF NOT EXISTS`)
-- `chunker.py`: fixed-size chunking with overlap
-- `extractors/`: pluggable extraction layer (`simple`, `llm`)
-- `ingest.py`: staged orchestration + durable job state
-- `upsert.py`: batched transactional writes with retry on transient errors
-- `rag/`: text-to-Cypher, execution, answer generation
-- `web/app.py`: API + static graph UI
+| Module | Responsibility |
+|---|---|
+| `config.py` | Environment-backed settings (`python-dotenv`) |
+| `neo4j_client.py` | Singleton Neo4j driver lifecycle |
+| `schema.py` | Neo4j 5+ constraints and indexes (`IF NOT EXISTS`) |
+| `chunker.py` | Fixed-size chunking with overlap |
+| `extractors/` | Pluggable extraction (`simple`, `llm`) |
+| `ingest.py` | Staged orchestration + durable job state |
+| `upsert.py` | Batched transactional writes + transient retry |
+| `rag/` | Text-to-Cypher, query execution, answer generation |
+| `web/app.py` | API + static graph UI |
 
 ## Invariants
 
-### ID Rules
+### IDs
 
 - Entity ID: `slugify(name)`
 - Chunk ID: `"{doc_id}::chunk::{idx}"`
-- Relationship ID: deterministic from doc, chunk, endpoints, extractor, and type
+- Relationship ID: deterministic composition of doc/chunk/endpoints/extractor/type
 
-### Write Rules
+### Writes
 
-- Use `UNWIND $rows AS row ... MERGE ...` for all graph writes.
-- Do not perform single-row MERGE in Python loops.
-- Keep writes in explicit/managed transactions.
+- Use `UNWIND $rows AS row ... MERGE ...` for graph writes.
+- Avoid single-row MERGE loops in Python.
+- Keep write operations in explicit or managed transactions.
 
-### Safety Rules
+### Safety
 
-- Never log credentials or API keys.
-- Read-only validation is the default for ad-hoc query execution.
-- Destructive actions require explicit opt-in flags.
+- Never log API keys or credentials.
+- Read-only validation is default for ad-hoc query execution.
+- Destructive commands require explicit user intent.
 
-## Current Gaps to Track
+## Current Gaps
 
-1. Relationship direction must be preserved end-to-end in all extraction paths.
-2. Re-ingest of changed source should reconcile stale graph artifacts.
-3. CI should enforce lint/type checks and run a Neo4j-backed integration job.
-4. RAG response contract needs explicit citations and evidence quality signaling.
+1. Preserve relationship direction end-to-end in staged extraction writes.
+2. Reconcile stale graph artifacts when source documents change.
+3. Enforce lint/type/integration quality gates in CI.
+4. Add citation-aware and confidence-aware RAG response contracts.
 
-These items are tracked in `docs/V2_GITHUB_ISSUES.md`.
+Backlog source: `docs/V2_GITHUB_ISSUES.md`.
 
 ## Troubleshooting
 
 ### Cannot connect to Neo4j
 
-- Confirm `.env` values:
+- Verify `.env` values:
   - `NEO4J_URI`
   - `NEO4J_USER`
   - `NEO4J_PASSWORD`
-- Check container health:
+- Check container state:
 
 ```bash
 docker compose ps
 docker compose logs neo4j
 ```
 
-### Fresh reset for local dev
+### Local fresh reset
 
 ```bash
 docker compose down -v
@@ -81,9 +84,7 @@ docker compose up -d
 kg init-db
 ```
 
-### Package import errors
-
-Install editable package from repo root:
+### Import errors
 
 ```bash
 pip install -e ".[dev]"
@@ -91,8 +92,8 @@ pip install -e ".[dev]"
 
 ### Test behavior
 
-- Unit tests should run without Neo4j.
-- Integration tests are marked and skip if Neo4j is unreachable.
+- Unit tests run without Neo4j.
+- Integration tests skip when Neo4j is unreachable.
 
 ```bash
 pytest -q
@@ -102,5 +103,6 @@ pytest -q
 
 - `README.md`
 - `docs/CODE_REVIEW.md`
+- `docs/SESSION_LOG.md`
 - `docs/V2_REBUILD_BLUEPRINT.md`
 - `docs/V2_ROADMAP.md`

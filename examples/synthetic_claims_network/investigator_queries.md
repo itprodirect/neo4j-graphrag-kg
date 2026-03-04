@@ -4,9 +4,9 @@ Starter Cypher queries for the synthetic claims network dataset.
 
 ## Query Pack Status (as of 2026-03-04)
 
-- Optimized for readability over micro-optimizations.
-- Safe defaults include explicit `LIMIT` clauses.
-- Intended for investigation demos and exploratory analysis.
+- Readability-first query set.
+- Explicit `LIMIT` usage for safe exploration defaults.
+- Good for demos and initial investigative workflows.
 
 ## 1) Entities Connected to Both Claims
 
@@ -102,9 +102,7 @@ ORDER BY r.confidence DESC
 LIMIT 100
 ```
 
-## Optional Next Query
-
-If you want a quick executive summary for demos:
+## Optional Executive Summary Query
 
 ```cypher
 MATCH (e:Entity)

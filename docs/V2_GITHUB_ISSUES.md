@@ -4,11 +4,13 @@ Issue-ready backlog for the v2 rebuild.
 
 ## Backlog Status (as of 2026-03-04)
 
-- Backlog draft: ready.
-- Labels script: ready (`scripts/create-v2-issues.ps1`).
-- Issue creation in GitHub: pending valid `gh` authentication.
+| Item | Status |
+|---|---|
+| Backlog draft | Ready |
+| Label + issue script | Ready (`scripts/create-v2-issues.ps1`) |
+| GitHub issue creation | Pending valid `gh` authentication |
 
-## Labels
+## Label Set
 
 - `v2`
 - `phase:1-correctness`
@@ -53,15 +55,15 @@ Issue-ready backlog for the v2 rebuild.
 
 ---
 
-## Acceptance Criteria Pattern
+## Issue Template Pattern
 
-Use this lightweight template for each issue:
+For each issue, include:
 
-- Problem statement.
-- Scope boundaries.
-- Acceptance criteria.
-- Test plan.
-- Rollout notes and migration impact.
+- Problem statement
+- Scope boundaries
+- Acceptance criteria
+- Test plan
+- Rollout or migration notes
 
 ## Create Issues Automatically
 
@@ -90,3 +92,5 @@ gh auth login -h github.com
 - `docs/V2_REBUILD_BLUEPRINT.md`
 - `docs/V2_ROADMAP.md`
 - `scripts/create-v2-issues.ps1`
+
+Simple plan, clean execution, useful software.

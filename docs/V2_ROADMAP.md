@@ -1,6 +1,6 @@
 # V2 Roadmap
 
-Phased execution plan for rebuilding the project on top of v1 lessons.
+Phased execution plan for rebuilding on top of v1 lessons.
 
 ## Roadmap Status (as of 2026-03-04)
 
@@ -52,7 +52,7 @@ Outcomes:
 Exit criteria:
 
 - Protocol interfaces are documented and type-checked.
-- Integrity diagnostics command is usable in CI automation.
+- Integrity diagnostics command is CI-friendly.
 - Metrics fields are stable and documented.
 
 ## Phase 3: Trustworthy GraphRAG (2-3 weeks)
@@ -65,7 +65,7 @@ Outcomes:
 
 Exit criteria:
 
-- API and CLI return citation-aware responses.
+- CLI and API return citation-aware responses.
 - Guardrail tests cover high-risk query patterns.
 - Baseline evaluation report committed.
 
@@ -104,7 +104,7 @@ Exit criteria:
 - Bi-weekly milestone demo.
 - Daily small, descriptive commits.
 
-## Suggested Milestones
+## Milestone Labels
 
 - `v2-phase-0`
 - `v2-phase-1`
@@ -115,4 +115,4 @@ Exit criteria:
 
 ## Backlog Reference
 
-Use `docs/V2_GITHUB_ISSUES.md` as the issue source file.
+Use `docs/V2_GITHUB_ISSUES.md` as issue source.
