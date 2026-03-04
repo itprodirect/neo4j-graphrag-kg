@@ -1,98 +1,106 @@
 # Developer Notes
 
-## Architecture Overview
+Technical notes for maintainers and contributors.
 
-```
-┌──────────┐     ┌─────────┐     ┌───────────┐     ┌──────────┐
-│ Text File│────▶│ Chunker │────▶│ Extractor │────▶│  Upsert  │──▶ Neo4j
-└──────────┘     └─────────┘     └───────────┘     └──────────┘
-                  ~1000 chars     entities +         UNWIND $rows
-                  150 overlap     co-occurrence       MERGE ...
-```
+## Status Snapshot (as of 2026-03-04)
 
-**Pipeline stages** (all orchestrated in `ingest.py`):
+- Runtime surface is stable for v1 workflows.
+- Durable ingest jobs are implemented.
+- Read-only Cypher safety defaults are in place for query paths.
+- v2 blueprint and roadmap are documented in `docs/V2_*.md`.
 
-1. **Read** — UTF-8 text file.
-2. **Chunk** — fixed-size character chunks (default 1000 chars, 150 overlap).
-3. **Extract** — heuristic entity extraction (capitalised phrases + known terms).
-4. **Edges** — co-occurrence within the same chunk → `RELATED_TO`.
-5. **Upsert** — batched UNWIND MERGE into Neo4j.
+## Core Architecture
 
-## ID Rules
+Pipeline flow:
 
-| Type     | Formula                          | Example                |
-|----------|----------------------------------|------------------------|
-| Entity   | `slugify(name)`                  | `knowledge-graph`      |
-| Chunk    | `"{doc_id}::chunk::{idx}"`       | `demo::chunk::0`       |
-| Document | User-supplied `--doc-id`         | `demo`                 |
-
-- **slugify**: NFKD normalise → lowercase → strip punctuation → collapse whitespace to hyphens.
-- Entity IDs are deterministic so the same entity from different documents merges.
-- Chunk IDs include the doc_id so chunks are scoped to their document.
-
-## UNWIND Batching Rule
-
-**All Neo4j writes** use the pattern:
-
-```cypher
-UNWIND $rows AS row
-MERGE (n:Label {id: row.id})
-SET n.prop = row.prop
+```text
+Text file -> chunk -> extract -> normalize IDs -> batched upsert -> Neo4j
 ```
 
-inside an **explicit transaction** (`session.begin_transaction()`).
+Major modules:
 
-Never call single-row MERGE in a Python for-loop.  Batch size default: 500.
+- `config.py`: environment-backed settings (`python-dotenv`)
+- `neo4j_client.py`: singleton Neo4j driver lifecycle
+- `schema.py`: Neo4j 5+ constraints and indexes (`IF NOT EXISTS`)
+- `chunker.py`: fixed-size chunking with overlap
+- `extractors/`: pluggable extraction layer (`simple`, `llm`)
+- `ingest.py`: staged orchestration + durable job state
+- `upsert.py`: batched transactional writes with retry on transient errors
+- `rag/`: text-to-Cypher, execution, answer generation
+- `web/app.py`: API + static graph UI
 
-## Graph Model
+## Invariants
 
-```
-(:Document {id, title, source, created_at})
-  -[:HAS_CHUNK]->
-(:Chunk {id, document_id, idx, text})
-  -[:MENTIONS]->
-(:Entity {id, name, type})
-  -[:RELATED_TO {doc_id, chunk_id, extractor, confidence, evidence}]->
-(:Entity)
-```
+### ID Rules
 
-Constraints (Neo4j 5+ `IF NOT EXISTS`):
-- `Document.id` UNIQUE
-- `Chunk.id` UNIQUE
-- `Entity.id` UNIQUE
+- Entity ID: `slugify(name)`
+- Chunk ID: `"{doc_id}::chunk::{idx}"`
+- Relationship ID: deterministic from doc, chunk, endpoints, extractor, and type
 
-Indexes:
-- `Entity.name`
-- `Entity.type`
-- `Chunk.document_id`
+### Write Rules
+
+- Use `UNWIND $rows AS row ... MERGE ...` for all graph writes.
+- Do not perform single-row MERGE in Python loops.
+- Keep writes in explicit/managed transactions.
+
+### Safety Rules
+
+- Never log credentials or API keys.
+- Read-only validation is the default for ad-hoc query execution.
+- Destructive actions require explicit opt-in flags.
+
+## Current Gaps to Track
+
+1. Relationship direction must be preserved end-to-end in all extraction paths.
+2. Re-ingest of changed source should reconcile stale graph artifacts.
+3. CI should enforce lint/type checks and run a Neo4j-backed integration job.
+4. RAG response contract needs explicit citations and evidence quality signaling.
+
+These items are tracked in `docs/V2_GITHUB_ISSUES.md`.
 
 ## Troubleshooting
 
-### Auth errors
+### Cannot connect to Neo4j
 
-Make sure `.env` has `NEO4J_PASSWORD` matching the password used in
-`docker compose up`.  Neo4j requires a password change on first run;
-the compose file sets the initial password.
-
-### Volume issues
-
-Data persists in Docker volumes `neo4j_data` and `neo4j_logs`.
-To start completely fresh:
+- Confirm `.env` values:
+  - `NEO4J_URI`
+  - `NEO4J_USER`
+  - `NEO4J_PASSWORD`
+- Check container health:
 
 ```bash
-docker compose down -v   # removes volumes
-docker compose up -d
+docker compose ps
+docker compose logs neo4j
 ```
 
-### Port conflicts
+### Fresh reset for local dev
 
-Default ports: 7474 (HTTP browser), 7687 (Bolt).
-Change in `docker-compose.yml` if they clash.
+```bash
+docker compose down -v
+docker compose up -d
+kg init-db
+```
 
-### "No module named neo4j_graphrag_kg"
+### Package import errors
 
-Ensure you installed in editable mode:
+Install editable package from repo root:
 
 ```bash
 pip install -e ".[dev]"
 ```
+
+### Test behavior
+
+- Unit tests should run without Neo4j.
+- Integration tests are marked and skip if Neo4j is unreachable.
+
+```bash
+pytest -q
+```
+
+## Related Docs
+
+- `README.md`
+- `docs/CODE_REVIEW.md`
+- `docs/V2_REBUILD_BLUEPRINT.md`
+- `docs/V2_ROADMAP.md`

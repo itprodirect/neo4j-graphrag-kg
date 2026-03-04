@@ -1,119 +1,128 @@
 # Session Log
 
-## Session 1 — Project Bootstrap
+Chronological build notes and status snapshots.
 
-**Goal:** Clean, Neo4j-first Python project scaffold with working CLI.
+## Session 1: Project Bootstrap
 
-**What changed:**
-- Created src-layout package `neo4j_graphrag_kg`
-- `pyproject.toml` with neo4j, typer, python-dotenv deps
-- Docker Compose for Neo4j 5 Community (auth enabled)
-- CLI commands: `kg ping`, `kg init-db`, `kg status`
-- Schema: constraints + indexes (Neo4j 5+ IF NOT EXISTS)
-- Singleton Neo4j driver with atexit cleanup
-- Unit + integration tests (skip when Neo4j unreachable)
-- README with Windows Git Bash quickstart
+Highlights:
 
----
+- Created `src` layout package and CLI skeleton.
+- Added Neo4j connectivity commands (`ping`, `init-db`, `status`).
+- Added initial schema constraints/indexes and basic tests.
 
-## Session 2 — MVP Ingestion + Query + Reset
+Status:
 
-**Goal:** Deterministic, idempotent ingestion pipeline with no LLM.
-
-**What changed:**
-
-### New modules
-- `ids.py` — slugify + deterministic entity_id / chunk_id
-- `chunker.py` — fixed-size character chunker with overlap
-- `extractor.py` — heuristic entity extraction (capitalised phrases + known terms) + co-occurrence edge builder
-- `upsert.py` — batched UNWIND MERGE for all node/rel types
-- `ingest.py` — pipeline orchestrator (read → chunk → extract → upsert)
-
-### New CLI commands
-- `kg ingest --input PATH --doc-id ID --title TITLE [--source] [--chunk-size] [--chunk-overlap]`
-- `kg query --cypher "..."` — prints results as aligned table
-- `kg reset --confirm` — batched DETACH DELETE with safety flag
-
-### Tests
-- Unit tests: `test_ids.py` (12), `test_chunker.py` (8), `test_extractor.py` (12)
-- Integration: `test_integration_ingest.py` — reset, ingest twice, verify idempotency
-
-### Docs
-- `examples/demo.txt` — 4 paragraphs about graph databases + GraphRAG
-- `docs/DEV_NOTES.md` — architecture, ID rules, batching rule, troubleshooting
-- `docs/SESSION_LOG.md` — this file
-
-**How to run:**
-
-```bash
-source .venv/Scripts/activate
-kg reset --confirm
-kg init-db
-kg ingest --input examples/demo.txt --doc-id demo --title "Demo"
-kg status
-kg query --cypher "MATCH (e:Entity) RETURN e.name, e.type ORDER BY e.name LIMIT 25"
-pytest -q
-```
-
-**Next steps:** → Completed in Session 3 (LLM extraction)
+- Complete.
 
 ---
 
-## Session 3 — LLM-Powered Extraction + Pluggable Architecture
+## Session 2: MVP Ingestion and Query
 
-**Goal:** Add LLM-based entity/relationship extraction with a pluggable
-extractor architecture supporting Anthropic (Claude) and OpenAI.
+Highlights:
 
-**What changed:**
+- Added deterministic ID generation (`ids.py`).
+- Added chunking, heuristic extraction, and batched upserts.
+- Added `kg ingest`, `kg query`, and `kg reset`.
 
-### New modules
-- `extractors/base.py` — `BaseExtractor` ABC, shared dataclasses (`ExtractedEntity`, `ExtractedRelationship`, `ExtractionResult`)
-- `extractors/simple.py` — Migrated heuristic extractor, implements `BaseExtractor`, preserves legacy standalone functions
-- `extractors/llm.py` — `LLMExtractor` with dual-provider support (Anthropic + OpenAI), JSON parsing with retry, temperature=0
-- `extractors/__init__.py` — Registry with `get_extractor("simple"|"llm", **kwargs)` factory, lazy LLM imports
+Status:
 
-### Modified modules
-- `extractor.py` — Now a backward-compat shim re-exporting from `extractors.simple`
-- `ingest.py` — Accepts optional `extractor: BaseExtractor` param; pluggable path deduplicates entities by slug, batches all upserts
-- `config.py` — Added `extractor_type`, `llm_provider`, `llm_model`, `llm_api_key`, `entity_types`, `relationship_types`
-- `cli.py` — New flags: `--extractor`, `--provider`, `--model`, `--entity-types`
-- `pyproject.toml` — Optional deps: `.[anthropic]`, `.[openai]`, `.[llm]`
-- `.env.example` — Added LLM + schema constraint vars
+- Complete.
 
-### Tests
-- `test_extractors_base.py` — 9 tests for dataclasses + ABC enforcement
-- `test_extractors_llm.py` — 15 tests with mocked API (JSON parsing, retry, confidence clamping, error handling)
-- All 84 tests pass (zero regressions from Session 2)
+---
 
-### Demo content
-- `examples/demo_llm.txt` — 5 paragraphs about fictional "Nexus Technologies" with rich named entities (people, organizations, locations, technologies)
+## Session 3: Pluggable Extraction and LLM Support
 
-### Design decisions
-- **Base package has zero new deps** — anthropic/openai SDKs loaded lazily only when LLM extractor is instantiated
-- **Dual type system** — Legacy types (with `.id`, `.source_id`) preserved for standalone functions; base types for pluggable interface
-- **Backward compatible** — All existing imports via `extractor.py` shim continue to work
-- **Schema-guided extraction** — Entity/relationship types passed in system prompt to constrain LLM output
-- **Never logs API keys** — Keys only used inside provider call functions
+Highlights:
 
-**How to run:**
+- Added extractor interfaces and registry.
+- Added `simple` and `llm` extractor implementations.
+- Added configuration knobs for provider/model/entity typing.
 
-```bash
-source .venv/Scripts/activate
+Status:
 
-# Heuristic extractor (default — no API key needed)
-kg ingest --input examples/demo.txt --doc-id demo --title "Demo"
+- Complete.
 
-# LLM extractor (requires LLM_API_KEY in .env or --provider/--model flags)
-pip install -e ".[llm]"
-kg ingest --input examples/demo_llm.txt --doc-id nexus --title "Nexus Corp" --extractor llm
+---
 
-# Compare results
-kg query --cypher "MATCH (e:Entity) RETURN e.name, e.type ORDER BY e.type, e.name"
-```
+## Session 4: Correctness and API Hardening
 
-**Next steps:**
-- Vector embeddings on chunks/entities for semantic search
-- `kg search` command combining vector + graph traversal
-- Multi-document ingestion (directory/glob support)
-- RAG query interface (natural language → Cypher → answer)
-- CI/CD pipeline
+Highlights:
+
+- Preserved relationship metadata and improved extraction interfaces.
+- Added handling improvements for optional SDK imports.
+- Expanded regression tests for prior bug classes.
+
+Status:
+
+- Complete.
+
+---
+
+## Session 5: GraphRAG and Web Surface
+
+Highlights:
+
+- Added `kg ask` orchestration (question -> Cypher -> answer).
+- Added FastAPI endpoints and D3 graph explorer.
+- Added safety validation for read-only Cypher generation.
+
+Status:
+
+- Complete.
+
+---
+
+## Session 6: Security and Reliability Pass
+
+Highlights:
+
+- Hardened CORS behavior and query safety checks.
+- Added transient Neo4j write retry/backoff in upsert path.
+- Added additional security-focused tests.
+
+Status:
+
+- Complete.
+
+---
+
+## Session 7: Durable Ingest Jobs and Service Boundary
+
+Highlights:
+
+- Added staged ingest jobs with durable Neo4j-backed job state.
+- Added `kg ingest-status` and `kg ingest-run`.
+- Added service container boundary and integration tests.
+
+Status:
+
+- Complete.
+
+---
+
+## Session 8: V2 Planning and Synthetic Investigation Dataset
+
+Highlights:
+
+- Added v2 blueprint, roadmap, and issue backlog docs.
+- Added issue creation automation script.
+- Added synthetic claims/fraud/E&O dataset and investigator query pack.
+
+Status:
+
+- Planning assets complete.
+- GitHub issue creation pending valid `gh` authentication.
+
+---
+
+## Current Program Status (as of 2026-03-04)
+
+- v1 foundation is functional and test-backed.
+- v2 planning artifacts are committed.
+- Next execution focus is v2 phase 0 and phase 1 correctness work.
+
+Related docs:
+
+- `docs/V2_REBUILD_BLUEPRINT.md`
+- `docs/V2_ROADMAP.md`
+- `docs/V2_GITHUB_ISSUES.md`

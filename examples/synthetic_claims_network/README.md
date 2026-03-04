@@ -1,25 +1,33 @@
 # Synthetic Claims Network Dataset
 
-This synthetic dataset is designed to show why graph modeling can surface
-fraud, misrepresentation, and errors-and-omissions patterns faster than
-traditional row-and-table workflows.
+A synthetic, investigation-friendly corpus for demonstrating graph-powered detection
+of fraud, misrepresentation, and broker E&O risk.
+
+## Dataset Status (as of 2026-03-04)
+
+- Scenario docs: complete.
+- Ingest helper script: complete.
+- Investigator query starter pack: complete.
+- Best use: demos, workshops, and regression-style retrieval tests.
 
 ## Scenario Summary
 
 The corpus models a commercial property claim ecosystem:
+
 - Carrier: `Northstar Mutual Insurance`
 - Insured: `Eclipse Manufacturing Holdings`
 - Broker: `Summit Risk Advisors`
 - Vendors: `Apex Restoration Group`, `Pinnacle Emergency Services`
-- Individuals: adjusters, broker reps, AP staff, and investigators
+- People: adjusters, broker reps, AP staff, auditors, investigators
 
-Intentional risk signals are embedded:
-- Policy misrepresentation (prior losses and solvent storage omitted)
-- Duplicate/suspicious invoicing patterns
-- Shared bank account across vendors
-- Cross-claim vendor reuse
-- Potential adjuster/vendor collusion
-- Broker E&O exposure
+Embedded risk patterns:
+
+- Policy application misrepresentation.
+- Duplicate invoice identifiers.
+- Shared remit account across vendors.
+- Vendor ownership overlap.
+- Cross-claim linkage signals.
+- Broker E&O exposure.
 
 ## Files
 
@@ -43,19 +51,24 @@ From repo root:
 powershell -NoProfile -File scripts/ingest-synthetic-claims.ps1 -Extractor simple
 ```
 
-For richer typed relationships:
+LLM extraction variant:
 
 ```powershell
 powershell -NoProfile -File scripts/ingest-synthetic-claims.ps1 -Extractor llm -Provider openai -Model gpt-4o
 ```
 
-## Why Graph Helps Here
+## Why Graph Helps
 
-A graph can naturally model:
-- One-to-many and many-to-many entity relationships
-- Cross-document identity overlap
-- Multi-hop investigative paths (person -> company -> bank account -> claim)
-- Contradiction links (application statement vs inspection finding)
+Graph modeling simplifies patterns that are awkward in row-based systems:
 
-See `investigator_queries.md` for starter Cypher queries.
+- Multi-hop linkage paths (person -> vendor -> bank account -> claim)
+- Cross-document contradiction checks
+- Shared ownership and payment flow traces
+- Ring-like high-degree entities
 
+## Notes
+
+- This dataset is synthetic and safe for demos.
+- No real customer data or production identifiers are used.
+
+For starter Cypher queries, see `investigator_queries.md`.
