@@ -1,0 +1,22 @@
+Document Type: Cross-Claim Linkage Note
+Prepared By: Special Investigations Unit
+Date: 2025-12-01
+
+Secondary Claim:
+- Claim Number: CLM-2025-1219
+- Insured: Redwood Specialty Foods
+- Adjuster: Victor Hale
+- Emergency Vendors: Apex Restoration Group, Pinnacle Emergency Services
+
+Observed Linkage Signals:
+1. Apex Restoration Group and Pinnacle Emergency Services both submitted
+   emergency remediation invoices under claim CLM-2025-1219.
+2. Payment routing again used remit bank account `BA-992041`.
+3. Labor rate pattern matched CLM-2025-1187 (275 USD per hour emergency labor).
+4. Lighthouse Advisory LLC appeared as a "coordination consultant" in claim notes.
+5. Darren Pike attended site walkthrough for Redwood Specialty Foods.
+
+SIU Assessment:
+Patterns across CLM-2025-1187 and CLM-2025-1219 indicate potential organized
+billing behavior spanning multiple insureds and claims.
+

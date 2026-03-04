@@ -350,3 +350,25 @@ MIT
 <p align="center">
   Built with 🧱 by <a href="https://github.com/itprodirect">IT Pro Direct</a>
 </p>
+
+## Synthetic Dataset
+
+A realistic synthetic fraud and E&O investigation corpus is available in:
+
+- `examples/synthetic_claims_network/`
+
+Quick load:
+
+```powershell
+powershell -NoProfile -File scripts/ingest-synthetic-claims.ps1 -Extractor simple
+```
+
+For richer typed relationships:
+
+```powershell
+powershell -NoProfile -File scripts/ingest-synthetic-claims.ps1 -Extractor llm -Provider openai -Model gpt-4o
+```
+
+Investigator query pack:
+
+- `examples/synthetic_claims_network/investigator_queries.md`

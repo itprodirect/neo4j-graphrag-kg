@@ -1,0 +1,23 @@
+Document Type: Pre-Bind Engineering Inspection
+Inspection Vendor: Harbor Technical Survey
+Inspector: Carla Dominguez
+Inspection Date: 2025-02-11
+Inspected Account: Eclipse Manufacturing Holdings
+Locations: Plant 14 and Plant 9
+
+Inspection Findings:
+1. Plant 14 sprinkler bypass valve was wired open at the time of inspection.
+2. Last signed sprinkler test log at Plant 14 was dated 2023-08-02.
+3. Fire panel trouble alarms were present in the maintenance room.
+4. One storage area contained approximately 320 gallons of HexaSol solvent.
+5. Solvent inventory exceeded the declared threshold in the policy application.
+
+Historical Loss Commentary:
+- Maintenance Manager Ivan Cole reported a flash fire event at Plant 9 in 2023.
+- Referenced claim identifier: CLM-2023-4410.
+- Event reportedly handled by Northstar Mutual Insurance.
+
+Risk Recommendation:
+The account should be considered increased hazard until suppression controls are corrected.
+A hazardous materials rider and enhanced inspection cadence are recommended.
+

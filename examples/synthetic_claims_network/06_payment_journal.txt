@@ -1,0 +1,44 @@
+Document Type: Claims Payment Journal Excerpt
+Carrier: Northstar Mutual Insurance
+Accounting Period: 2025-11
+
+Payment Entries:
+1. Payment ID: PAY-33109
+   Claim: CLM-2025-1187
+   Payee: Apex Restoration Group
+   Amount: 350000 USD
+   Bank Account: BA-992041
+   Payment Date: 2025-11-12
+
+2. Payment ID: PAY-33131
+   Claim: CLM-2025-1187
+   Payee: Pinnacle Emergency Services
+   Amount: 212000 USD
+   Bank Account: BA-992041
+   Payment Date: 2025-11-13
+
+3. Transfer ID: TRF-8842
+   Source: Apex Restoration Group
+   Destination: Lighthouse Advisory LLC
+   Amount: 28000 USD
+   Transfer Date: 2025-11-14
+   Reference: Consulting Coordination Fee
+
+4. Disbursement ID: DIS-1904
+   Source: Lighthouse Advisory LLC
+   Destination: Victor Hale
+   Amount: 9500 USD
+   Disbursement Date: 2025-11-16
+   Reference: Independent Advisory Services
+
+5. Payment ID: PAY-33244
+   Claim: CLM-2025-1187
+   Payee: Apex Restoration Group
+   Amount: 334500 USD
+   Bank Account: BA-992041
+   Payment Date: 2025-11-20
+
+Control Notes:
+- Shared bank account usage was escalated to Internal Audit.
+- Transfer chain from vendor to consulting entity to adjuster was marked for review.
+

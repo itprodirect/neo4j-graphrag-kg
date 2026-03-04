@@ -1,0 +1,25 @@
+Document Type: Internal Audit Email Thread
+Subject: CLM-2025-1187 Vendor and Payment Irregularities
+Thread Date Range: 2025-11-15 to 2025-11-22
+
+Participants:
+- Nora Singh, Internal Audit Lead
+- Eli Navarro, Claims Finance Analyst
+- Sam Ortega, Underwriting Manager
+- Priya Datar, SIU Manager
+
+Email Highlights:
+1. Nora Singh flagged that Apex Restoration Group and Pinnacle Emergency Services
+   share the same remit bank account `BA-992041`.
+2. Eli Navarro identified duplicate invoice number `INV-77841` submitted by both vendors.
+3. Priya Datar noted that Lighthouse Advisory LLC appears in payment routing and
+   also appears in vendor onboarding records tied to Darren Pike.
+4. Sam Ortega acknowledged the pre-bind inspection report documented solvent storage
+   and a prior fire event at Plant 9, which conflicts with application statements.
+5. Nora Singh asked for legal hold due to potential fraud and broker E&O concerns.
+
+Ownership Research Summary:
+- Darren Pike listed as beneficial owner of Apex Restoration Group.
+- Darren Pike also linked to Pinnacle Emergency Services registration records.
+- Lighthouse Advisory LLC shares mailing address with Pinnacle Emergency Services.
+

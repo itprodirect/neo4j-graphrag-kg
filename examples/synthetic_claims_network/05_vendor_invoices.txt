@@ -1,0 +1,36 @@
+Document Type: Vendor Invoice Packet
+Claim Number: CLM-2025-1187
+Carrier: Northstar Mutual Insurance
+
+Invoice A:
+- Vendor: Apex Restoration Group
+- Invoice Number: INV-77841
+- Invoice Date: 2025-11-07
+- Amount: 486000 USD
+- Description: Emergency drying, containment walls, dehumidification
+- Labor Detail: 480 hours at 275 USD per hour
+- Remit Bank Account: BA-992041
+
+Invoice B:
+- Vendor: Pinnacle Emergency Services
+- Invoice Number: INV-77841
+- Invoice Date: 2025-11-08
+- Amount: 212000 USD
+- Description: Supplemental emergency drying and containment
+- Labor Detail: 210 hours at 275 USD per hour
+- Remit Bank Account: BA-992041
+
+Invoice C:
+- Vendor: Apex Restoration Group
+- Invoice Number: INV-77902
+- Invoice Date: 2025-11-09
+- Amount: 198500 USD
+- Description: Air scrubber deployment and filter rotation
+- Equipment Unit IDs: AS-4401, AS-4402, AS-4403
+- Remit Bank Account: BA-992041
+
+Invoice Integrity Flags Noted by AP:
+- Duplicate invoice number `INV-77841` across two distinct vendors.
+- Identical labor rate and overlapping line item language.
+- Shared remit account `BA-992041` across Apex Restoration Group and Pinnacle Emergency Services.
+

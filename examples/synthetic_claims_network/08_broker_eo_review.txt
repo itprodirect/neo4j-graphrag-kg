@@ -1,0 +1,33 @@
+Document Type: Broker Errors and Omissions Review Memo
+Prepared By: Northstar Mutual Professional Liability Unit
+Date: 2025-11-24
+Broker Agency: Summit Risk Advisors
+Broker Representative: Lena Brooks
+Insured: Eclipse Manufacturing Holdings
+
+Summary:
+The submission package from Summit Risk Advisors appears to contain material omissions
+and potential misstatements that affected underwriting decisions.
+
+Findings:
+1. Prior loss omission:
+   - Application stated no prior property losses in five years.
+   - Inspection and maintenance interviews referenced claim CLM-2023-4410 at Plant 9.
+
+2. Hazard profile omission:
+   - Application stated no solvent storage above 50 gallons.
+   - Inspection documented approximately 320 gallons of HexaSol solvent at Plant 14.
+
+3. Financial misrepresentation risk:
+   - Submitted revenue value: 42 million USD.
+   - Audited financial packet reviewed post-loss: 79 million USD.
+
+4. Coverage structuring concern:
+   - Hazardous materials rider not included at bind.
+   - Suppression control deficiencies were present before policy inception.
+
+Recommended Actions:
+- Open broker E&O reserve.
+- Preserve all underwriting, broker, and insured communications.
+- Coordinate with SIU regarding overlap with claim payment irregularities.
+
