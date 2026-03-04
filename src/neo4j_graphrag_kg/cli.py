@@ -2,14 +2,17 @@
 
 from __future__ import annotations
 
+import json
 import logging
 from pathlib import Path
+
 import typer
 
-from neo4j_graphrag_kg.config import get_settings
-from neo4j_graphrag_kg.neo4j_client import get_driver, close_driver
+from neo4j_graphrag_kg.config import Settings, get_settings
+from neo4j_graphrag_kg.neo4j_client import close_driver, get_driver
 from neo4j_graphrag_kg.rag.text2cypher import validate_cypher_readonly
 from neo4j_graphrag_kg.schema import ALL_STATEMENTS
+from neo4j_graphrag_kg.services import build_service_container
 
 app = typer.Typer(help="Neo4j Knowledge-Graph CLI", no_args_is_help=True)
 
@@ -23,12 +26,57 @@ def _setup_logging() -> None:
     )
 
 
+def _build_extractor(
+    settings: Settings,
+    *,
+    extractor_name: str,
+    provider: str,
+    model: str,
+    entity_types: str,
+) -> tuple[str, object]:
+    from neo4j_graphrag_kg.extractors import get_extractor
+
+    ext_type = extractor_name or settings.extractor_type or "simple"
+    if ext_type == "llm":
+        llm_provider = provider or settings.llm_provider
+        llm_model = model or settings.llm_model
+        api_key = settings.llm_api_key
+        if not api_key:
+            raise ValueError(
+                "LLM_API_KEY is required when using --extractor llm. "
+                "Set it in .env or as an environment variable."
+            )
+
+        e_types = (
+            [t.strip() for t in entity_types.split(",") if t.strip()]
+            if entity_types
+            else settings.entity_types
+        )
+
+        extractor = get_extractor(
+            "llm",
+            provider=llm_provider,
+            model=llm_model or None,
+            api_key=api_key,
+            entity_types=e_types,
+            relationship_types=settings.relationship_types,
+        )
+        return ext_type, extractor
+
+    if ext_type == "simple":
+        return ext_type, get_extractor("simple")
+
+    raise ValueError(f"Unknown extractor: {ext_type!r}. Use 'simple' or 'llm'.")
+
+
 @app.command()
 def ping() -> None:
     """Verify connectivity to the Neo4j instance."""
-    driver = get_driver()
+    settings = get_settings()
+    driver = get_driver(settings)
+    services = build_service_container(settings, driver=driver)
     try:
-        driver.verify_connectivity()
+        services.graph.verify_connectivity()
         typer.echo("Neo4j is reachable.")
     except Exception as exc:
         typer.echo(f"Cannot reach Neo4j: {exc}", err=True)
@@ -42,8 +90,9 @@ def init_db() -> None:
     """Create constraints and indexes (idempotent, Neo4j 5+ syntax)."""
     settings = get_settings()
     driver = get_driver(settings)
+    services = build_service_container(settings, driver=driver)
     try:
-        with driver.session(database=settings.neo4j_database) as session:
+        with services.graph.session() as session:
             for stmt in ALL_STATEMENTS:
                 session.run(stmt)
                 typer.echo(f"  OK  {stmt.split('IF NOT EXISTS')[0].strip()}")
@@ -60,16 +109,15 @@ def status() -> None:
     """Show Neo4j version, node/rel counts, and constraints."""
     settings = get_settings()
     driver = get_driver(settings)
+    services = build_service_container(settings, driver=driver)
     try:
-        with driver.session(database=settings.neo4j_database) as session:
-            # Version
+        with services.graph.session() as session:
             ver = session.run(
                 "CALL dbms.components() YIELD name, versions RETURN name, versions"
             ).single()
             if ver:
                 typer.echo(f"{ver['name']} {ver['versions'][0]}")
 
-            # Node / relationship counts
             counts = session.run(
                 "MATCH (n) "
                 "OPTIONAL MATCH ()-[r]->() "
@@ -78,13 +126,11 @@ def status() -> None:
             if counts:
                 typer.echo(f"Nodes: {counts['nodes']}  Relationships: {counts['rels']}")
 
-            # Constraints
             constraints = list(session.run("SHOW CONSTRAINTS"))
             typer.echo(f"Constraints ({len(constraints)}):")
             for c in constraints:
                 typer.echo(f"  {c['name']}")
 
-            # Indexes
             indexes = list(session.run("SHOW INDEXES"))
             typer.echo(f"Indexes ({len(indexes)}):")
             for idx in indexes:
@@ -117,76 +163,158 @@ def ingest(
     entity_types: str = typer.Option(
         "", "--entity-types", help="Comma-separated entity types for LLM extraction",
     ),
+    max_retries: int = typer.Option(
+        2, "--max-retries", min=0, help="Maximum retries per ingest stage on failure",
+    ),
+    queue_only: bool = typer.Option(
+        False,
+        "--queue-only",
+        help="Create a durable ingest job and exit without processing it now.",
+    ),
 ) -> None:
-    """Ingest a text file: chunk, extract entities, upsert to Neo4j."""
+    """Ingest a text file through staged jobs with durable Neo4j job state."""
     _setup_logging()
 
     if not input.is_file():
         typer.echo(f"File not found: {input}", err=True)
         raise typer.Exit(code=1)
 
-    from neo4j_graphrag_kg.extractors import get_extractor
-    from neo4j_graphrag_kg.ingest import ingest_file
+    from neo4j_graphrag_kg.ingest import IngestJobSpec
 
     settings = get_settings()
-
-    # Resolve extractor type: CLI flag > config > default
-    ext_type = extractor_name or settings.extractor_type or "simple"
-
-    # Build extractor instance — all extractors go through the same interface
-    if ext_type == "llm":
-        llm_provider = provider or settings.llm_provider
-        llm_model = model or settings.llm_model
-        api_key = settings.llm_api_key
-
-        if not api_key:
-            typer.echo(
-                "LLM_API_KEY is required when using --extractor llm. "
-                "Set it in .env or as an environment variable.",
-                err=True,
-            )
-            raise typer.Exit(code=1)
-
-        e_types = (
-            [t.strip() for t in entity_types.split(",") if t.strip()]
-            if entity_types
-            else settings.entity_types
+    try:
+        ext_type, ext_instance = _build_extractor(
+            settings,
+            extractor_name=extractor_name,
+            provider=provider,
+            model=model,
+            entity_types=entity_types,
         )
-
-        ext_instance = get_extractor(
-            "llm",
-            provider=llm_provider,
-            model=llm_model or None,
-            api_key=api_key,
-            entity_types=e_types,
-            relationship_types=settings.relationship_types,
-        )
-    elif ext_type == "simple":
-        ext_instance = get_extractor("simple")
-    else:
-        typer.echo(f"Unknown extractor: {ext_type!r}. Use 'simple' or 'llm'.", err=True)
+    except ValueError as exc:
+        typer.echo(str(exc), err=True)
         raise typer.Exit(code=1)
 
     driver = get_driver(settings)
+    services = build_service_container(settings, driver=driver)
     try:
-        summary = ingest_file(
-            driver,
-            settings.neo4j_database,
+        spec = IngestJobSpec(
             input_path=input,
             doc_id=doc_id,
             title=title,
             source=source,
             chunk_size=chunk_size,
             chunk_overlap=chunk_overlap,
-            extractor=ext_instance,
         )
+        job_id = services.ingest.enqueue_job(
+            spec,
+            max_retries=max_retries,
+            extractor_name=ext_type,
+        )
+
+        if queue_only:
+            typer.echo(f"Queued ingest job: {job_id}")
+            typer.echo("Run 'kg ingest-run --job-id <id>' to process it.")
+            return
+
+        summary = services.ingest.run_job(job_id, extractor=ext_instance)
         typer.echo(
-            f"Ingested '{doc_id}': {summary['chunks']} chunks, "
+            f"Ingested '{doc_id}' via job {job_id}: {summary['chunks']} chunks, "
             f"{summary['entities']} entities, {summary['edges']} edges "
             f"in {summary['elapsed_s']}s"
         )
     except Exception as exc:
         typer.echo(f"Ingestion failed: {exc}", err=True)
+        raise typer.Exit(code=1)
+    finally:
+        close_driver()
+
+
+@app.command("ingest-status")
+def ingest_status(
+    job_id: str = typer.Option(..., "--job-id", help="Ingest job ID to inspect"),
+) -> None:
+    """Show durable ingest job state (status, stage, retries, summary)."""
+    settings = get_settings()
+    driver = get_driver(settings)
+    services = build_service_container(settings, driver=driver)
+    try:
+        job = services.ingest.jobs.get_job(job_id)
+        if job is None:
+            typer.echo(f"Job not found: {job_id}", err=True)
+            raise typer.Exit(code=1)
+
+        payload = {
+            "id": job.get("id"),
+            "status": job.get("status"),
+            "stage": job.get("stage"),
+            "attempt": job.get("attempt"),
+            "max_retries": job.get("max_retries"),
+            "error": job.get("error"),
+            "created_at": job.get("created_at"),
+            "updated_at": job.get("updated_at"),
+            "completed_at": job.get("completed_at"),
+            "summary": job.get("summary", {}),
+        }
+        typer.echo(json.dumps(payload, indent=2))
+    except typer.Exit:
+        raise
+    except Exception as exc:
+        typer.echo(f"Could not read ingest job: {exc}", err=True)
+        raise typer.Exit(code=1)
+    finally:
+        close_driver()
+
+
+@app.command("ingest-run")
+def ingest_run(
+    job_id: str = typer.Option(..., "--job-id", help="Queued ingest job ID to run"),
+    extractor_name: str = typer.Option(
+        "", "--extractor", help="Override extractor: 'simple' or 'llm'",
+    ),
+    provider: str = typer.Option(
+        "", "--provider", help="LLM provider override: 'anthropic' or 'openai'",
+    ),
+    model: str = typer.Option(
+        "", "--model", help="LLM model override",
+    ),
+    entity_types: str = typer.Option(
+        "", "--entity-types", help="Comma-separated entity types override for LLM extraction",
+    ),
+) -> None:
+    """Run a queued durable ingest job by ID."""
+    _setup_logging()
+    settings = get_settings()
+    driver = get_driver(settings)
+    services = build_service_container(settings, driver=driver)
+    try:
+        job = services.ingest.jobs.get_job(job_id)
+        if job is None:
+            typer.echo(f"Job not found: {job_id}", err=True)
+            raise typer.Exit(code=1)
+
+        requested = extractor_name or str(job.get("extractor_name", "simple"))
+        try:
+            _, ext_instance = _build_extractor(
+                settings,
+                extractor_name=requested,
+                provider=provider,
+                model=model,
+                entity_types=entity_types,
+            )
+        except ValueError as exc:
+            typer.echo(str(exc), err=True)
+            raise typer.Exit(code=1)
+
+        summary = services.ingest.run_job(job_id, extractor=ext_instance)
+        typer.echo(
+            f"Completed job {job_id}: {summary['chunks']} chunks, "
+            f"{summary['entities']} entities, {summary['edges']} edges "
+            f"in {summary['elapsed_s']}s"
+        )
+    except typer.Exit:
+        raise
+    except Exception as exc:
+        typer.echo(f"Could not run ingest job: {exc}", err=True)
         raise typer.Exit(code=1)
     finally:
         close_driver()
@@ -221,9 +349,7 @@ def query(
             typer.echo("(no results)")
             return
 
-        # Build simple table
         keys = list(records[0].keys())
-        # Compute column widths
         col_widths = {k: len(k) for k in keys}
         str_rows: list[dict[str, str]] = []
         for rec in records:
@@ -235,7 +361,6 @@ def query(
                 col_widths[k] = max(col_widths[k], len(s))
             str_rows.append(sr)
 
-        # Header
         header = " | ".join(k.ljust(col_widths[k]) for k in keys)
         sep = "-+-".join("-" * col_widths[k] for k in keys)
         typer.echo(header)
@@ -285,11 +410,12 @@ def ask(
     llm_model = model or settings.llm_model
 
     driver = get_driver(settings)
+    services = build_service_container(settings, driver=driver)
     try:
         response = rag_ask(
             question,
-            driver=driver,
-            database=settings.neo4j_database,
+            driver=services.driver,
+            database=services.graph.database,
             provider=llm_provider,
             model=llm_model,
             api_key=api_key,
@@ -327,15 +453,15 @@ def serve(
         )
         raise typer.Exit(code=1)
 
-    import webbrowser
     import threading
+    import webbrowser
 
     url = f"http://{host}:{port}" if host != "0.0.0.0" else f"http://localhost:{port}"
     typer.echo(f"Starting graph visualization server at {url}")
 
-    # Open browser after a short delay to let the server start
     def _open_browser() -> None:
         import time
+
         time.sleep(1.5)
         webbrowser.open(url)
 
@@ -360,19 +486,9 @@ def reset(
 
     settings = get_settings()
     driver = get_driver(settings)
+    services = build_service_container(settings, driver=driver)
     try:
-        with driver.session(database=settings.neo4j_database) as session:
-            # Use batched delete to handle large graphs without OOM
-            deleted = 0
-            while True:
-                result = session.run(
-                    "MATCH (n) WITH n LIMIT 10000 DETACH DELETE n RETURN count(*) AS c"
-                )
-                record = result.single()
-                batch_count = record["c"] if record else 0
-                if batch_count == 0:
-                    break
-                deleted += batch_count
+        deleted = services.graph.reset(batch_size=10000)
         typer.echo(f"Reset complete. Deleted {deleted} nodes (and their relationships).")
     except Exception as exc:
         typer.echo(f"Reset failed: {exc}", err=True)

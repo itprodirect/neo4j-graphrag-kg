@@ -21,6 +21,10 @@ CONSTRAINTS: list[str] = [
         "CREATE CONSTRAINT related_to_id_unique IF NOT EXISTS "
         "FOR ()-[r:RELATED_TO]-() REQUIRE r.id IS UNIQUE"
     ),
+    (
+        "CREATE CONSTRAINT ingest_job_id_unique IF NOT EXISTS "
+        "FOR (j:IngestJob) REQUIRE j.id IS UNIQUE"
+    ),
 ]
 
 # --- Indexes (IF NOT EXISTS) -----------------------------------------------
@@ -37,6 +41,10 @@ INDEXES: list[str] = [
     (
         "CREATE INDEX chunk_document_id_idx IF NOT EXISTS "
         "FOR (c:Chunk) ON (c.document_id)"
+    ),
+    (
+        "CREATE INDEX ingest_job_status_idx IF NOT EXISTS "
+        "FOR (j:IngestJob) ON (j.status)"
     ),
 ]
 

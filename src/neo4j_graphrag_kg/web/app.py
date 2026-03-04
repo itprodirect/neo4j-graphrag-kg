@@ -24,6 +24,7 @@ from pydantic import BaseModel
 
 from neo4j_graphrag_kg.config import get_settings
 from neo4j_graphrag_kg.neo4j_client import get_driver
+from neo4j_graphrag_kg.services import GraphService, ServiceContainer, build_service_container
 
 logger = logging.getLogger(__name__)
 
@@ -46,11 +47,16 @@ _STATIC_DIR = Path(__file__).parent / "static"
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _get_db() -> tuple:
-    """Return (driver, database) tuple."""
+def _get_services() -> ServiceContainer:
+    """Build runtime service container for the current request."""
     settings = get_settings()
     driver = get_driver(settings)
-    return driver, settings.neo4j_database
+    return build_service_container(settings, driver=driver)
+
+
+def _get_graph_service() -> GraphService:
+    """Return a graph service built from runtime settings + injected driver."""
+    return _get_services().graph
 
 
 def _node_to_dict(node: Any) -> dict[str, Any]:
@@ -70,18 +76,22 @@ def _rel_to_dict(rel: Any) -> dict[str, Any]:
     return {
         "type": rel.type if hasattr(rel, "type") else "UNKNOWN",
         "properties": props,
-        "start_node_element_id": str(rel.start_node.element_id) if hasattr(rel, "start_node") else "",
-        "end_node_element_id": str(rel.end_node.element_id) if hasattr(rel, "end_node") else "",
+        "start_node_element_id": (
+            str(rel.start_node.element_id) if hasattr(rel, "start_node") else ""
+        ),
+        "end_node_element_id": (
+            str(rel.end_node.element_id) if hasattr(rel, "end_node") else ""
+        ),
     }
 
 
 def _graph_query(cypher: str, params: dict | None = None) -> dict[str, Any]:
     """Execute a Cypher query and return {nodes: [...], edges: [...]}."""
-    driver, database = _get_db()
+    graph = _get_graph_service()
     nodes_map: dict[str, dict[str, Any]] = {}
     edges_list: list[dict[str, Any]] = []
 
-    with driver.session(database=database) as session:
+    with graph.session() as session:
         result = session.run(cypher, params or {})
         for record in result:
             for value in record.values():
@@ -217,12 +227,12 @@ async def ask_endpoint(req: AskRequest) -> JSONResponse:
 
     from neo4j_graphrag_kg.rag.pipeline import ask as rag_ask
 
-    driver, database = _get_db()
+    services = _get_services()
     try:
         response = rag_ask(
             req.question,
-            driver=driver,
-            database=database,
+            driver=services.driver,
+            database=services.graph.database,
             provider=settings.llm_provider,
             model=settings.llm_model,
             api_key=settings.llm_api_key,
@@ -242,9 +252,9 @@ async def ask_endpoint(req: AskRequest) -> JSONResponse:
 @app.get("/api/status")
 async def status_endpoint() -> JSONResponse:
     """Return Neo4j status as JSON."""
-    driver, database = _get_db()
+    services = _get_services()
     try:
-        with driver.session(database=database) as session:
+        with services.graph.session() as session:
             # Version
             ver_row = session.run(
                 "CALL dbms.components() YIELD name, versions RETURN name, versions"
