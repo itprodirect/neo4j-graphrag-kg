@@ -20,15 +20,20 @@ from neo4j_graphrag_kg.ids import chunk_id as make_chunk_id
 from neo4j_graphrag_kg.ids import edge_id as make_edge_id
 from neo4j_graphrag_kg.ids import slugify
 from neo4j_graphrag_kg.upsert import (
+    purge_document_subgraph,
+    replace_document_subgraph_atomic,
     upsert_chunks,
     upsert_document,
     upsert_entities,
     upsert_mentions,
     upsert_related,
-    purge_document_subgraph,
 )
 
 logger = logging.getLogger(__name__)
+
+REPLACE_MODE_ATOMIC = "atomic"
+REPLACE_MODE_NON_ATOMIC = "non_atomic"
+_REPLACE_MODES = {REPLACE_MODE_ATOMIC, REPLACE_MODE_NON_ATOMIC}
 
 
 def _utc_now_iso() -> str:
@@ -64,6 +69,15 @@ def _extractor_label(extractor: BaseExtractor) -> str:
     extractor_name = type(extractor).__name__.lower()
     return "simple" if "simple" in extractor_name else "llm"
 
+
+def _normalize_replace_mode(mode: str | None) -> str:
+    raw = str(mode or REPLACE_MODE_ATOMIC).strip().lower().replace("-", "_")
+    if raw not in _REPLACE_MODES:
+        raise ValueError(
+            f"Unknown replace_mode: {mode!r}. Use '{REPLACE_MODE_ATOMIC}' "
+            f"or '{REPLACE_MODE_NON_ATOMIC}'."
+        )
+    return raw
 
 def _stage_parse_chunk(
     *,
@@ -214,22 +228,41 @@ def _stage_graph_write(
     entity_rows: list[dict[str, Any]],
     mention_rows: list[dict[str, Any]],
     relationship_rows: list[dict[str, Any]],
+    replace_mode: str = REPLACE_MODE_ATOMIC,
 ) -> dict[str, Any]:
-    purge_document_subgraph(driver, database, doc_id=doc_id)
+    mode = _normalize_replace_mode(replace_mode)
+
+    if mode == REPLACE_MODE_ATOMIC:
+        result = replace_document_subgraph_atomic(
+            driver,
+            database,
+            doc_id=doc_id,
+            title=title,
+            source=source,
+            chunk_rows=chunk_rows,
+            entity_rows=entity_rows,
+            mention_rows=mention_rows,
+            relationship_rows=relationship_rows,
+        )
+        result["replace_mode"] = mode
+        return result
+
+    purged = purge_document_subgraph(driver, database, doc_id=doc_id)
     upsert_document(driver, database, doc_id=doc_id, title=title, source=source)
     upsert_chunks(driver, database, chunk_rows)
     upsert_entities(driver, database, entity_rows)
     upsert_mentions(driver, database, mention_rows)
     upsert_related(driver, database, relationship_rows)
     return {
+        "replace_mode": mode,
+        "purged": purged,
         "written": {
             "chunks": len(chunk_rows),
             "entities": len(entity_rows),
             "mentions": len(mention_rows),
             "edges": len(relationship_rows),
-        }
+        },
     }
-
 
 def _build_summary(
     *,
@@ -262,6 +295,7 @@ class IngestJobSpec:
     source: str = ""
     chunk_size: int = 1000
     chunk_overlap: int = 150
+    replace_mode: str = REPLACE_MODE_ATOMIC
 
 
 _UPSERT_JOB = """\
@@ -275,6 +309,7 @@ SET j.created_at = row.created_at,
     j.chunk_size = row.chunk_size,
     j.chunk_overlap = row.chunk_overlap,
     j.extractor_name = row.extractor_name,
+    j.replace_mode = row.replace_mode,
     j.status = row.status,
     j.stage = row.stage,
     j.stage_index = row.stage_index,
@@ -319,6 +354,7 @@ class Neo4jIngestJobStore:
             "chunk_size": spec.chunk_size,
             "chunk_overlap": spec.chunk_overlap,
             "extractor_name": extractor_name,
+            "replace_mode": _normalize_replace_mode(spec.replace_mode),
             "status": "queued",
             "stage": "queued",
             "stage_index": 0,
@@ -403,6 +439,7 @@ class Neo4jIngestJobStore:
         summary_json = job.get("summary_json")
         job["state"] = _json_loads(state_json if isinstance(state_json, str) else "", {})
         job["summary"] = _json_loads(summary_json if isinstance(summary_json, str) else "", {})
+        job["replace_mode"] = _normalize_replace_mode(str(job.get("replace_mode", REPLACE_MODE_ATOMIC)))
         return job
 
     def _save_job(self, job: dict[str, Any]) -> None:
@@ -419,6 +456,7 @@ class Neo4jIngestJobStore:
             "chunk_size": int(job.get("chunk_size", 1000)),
             "chunk_overlap": int(job.get("chunk_overlap", 150)),
             "extractor_name": str(job.get("extractor_name", "simple")),
+            "replace_mode": _normalize_replace_mode(str(job.get("replace_mode", REPLACE_MODE_ATOMIC))),
             "status": str(job.get("status", "queued")),
             "stage": str(job.get("stage", "queued")),
             "stage_index": int(job.get("stage_index", 0)),
@@ -665,8 +703,8 @@ class IngestPipelineService:
             entity_rows=entity_rows,
             mention_rows=mention_rows,
             relationship_rows=relationship_rows,
+            replace_mode=str(job.get("replace_mode", REPLACE_MODE_ATOMIC)),
         )
-
     def _run_post_processing_stage(
         self,
         job: dict[str, Any],
@@ -711,6 +749,7 @@ def ingest_file(
     chunk_size: int = 1000,
     chunk_overlap: int = 150,
     extractor: BaseExtractor | None = None,
+    replace_mode: str = REPLACE_MODE_ATOMIC,
 ) -> dict[str, Any]:
     """Run synchronous ingest for one file (compatibility wrapper)."""
     active_extractor = extractor or SimpleExtractor()
@@ -748,6 +787,7 @@ def ingest_file(
         entity_rows=entity_rows,
         mention_rows=mention_rows,
         relationship_rows=relationship_rows,
+        replace_mode=replace_mode,
     )
 
     chars_raw = parse_state.get("chars", 0)

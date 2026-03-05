@@ -52,6 +52,36 @@ def _execute_write_with_retry(
             )
             time.sleep(backoff)
 
+def _execute_write_with_retry_any(
+    session: Any,
+    callback: Callable[..., Any],
+    *args: Any,
+    max_attempts: int = 3,
+    base_backoff_s: float = 0.2,
+) -> Any:
+    """Execute a managed write callback with bounded retry."""
+    attempts = max(1, max_attempts)
+    for attempt in range(1, attempts + 1):
+        try:
+            return session.execute_write(callback, *args)
+        except _TRANSIENT_WRITE_ERRORS as exc:
+            if attempt >= attempts:
+                raise
+            backoff = base_backoff_s * (2 ** (attempt - 1))
+            logger.warning(
+                "Transient write failed (%s), retrying attempt %d/%d in %.2fs",
+                exc.__class__.__name__,
+                attempt + 1,
+                attempts,
+                backoff,
+            )
+            time.sleep(backoff)
+    return None
+
+
+def _iter_batches(rows: list[dict[str, Any]], batch_size: int) -> list[list[dict[str, Any]]]:
+    safe_batch = max(1, int(batch_size))
+    return [rows[i : i + safe_batch] for i in range(0, len(rows), safe_batch)]
 
 def _run_batch(
     driver: Driver,
@@ -264,6 +294,128 @@ def purge_document_subgraph(
         "chunks": deleted_chunks,
         "related_edges": deleted_related,
     }
+
+
+def replace_document_subgraph_atomic(
+    driver: Driver,
+    database: str,
+    *,
+    doc_id: str,
+    title: str,
+    source: str,
+    chunk_rows: list[dict[str, Any]],
+    entity_rows: list[dict[str, Any]],
+    mention_rows: list[dict[str, Any]],
+    relationship_rows: list[dict[str, Any]],
+    batch_size: int = 500,
+) -> dict[str, Any]:
+    """Atomically replace a document-scoped subgraph in one transaction.
+
+    The operation purges existing chunks/mentions and document-scoped RELATED_TO
+    edges for ``doc_id``, then writes the new document/chunk/entity/mention/edge
+    payloads within the same managed transaction.
+    """
+    safe_batch = max(1, int(batch_size))
+
+    doc_row = {
+        "id": doc_id,
+        "title": title,
+        "source": source,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+    def _write_replace(
+        tx: Any,
+        target_doc_id: str,
+        target_doc_row: dict[str, str],
+        chunk_payload: list[dict[str, Any]],
+        entity_payload: list[dict[str, Any]],
+        mention_payload: list[dict[str, Any]],
+        related_payload: list[dict[str, Any]],
+        limit: int,
+    ) -> dict[str, Any]:
+        deleted_chunks = 0
+        deleted_related = 0
+
+        while True:
+            record = tx.run(
+                _DELETE_DOC_CHUNK_BATCH,
+                doc_id=target_doc_id,
+                limit=limit,
+            ).single()
+            deleted = int(record["deleted"]) if record else 0
+            if deleted == 0:
+                break
+            deleted_chunks += deleted
+
+        while True:
+            record = tx.run(
+                _DELETE_DOC_RELATED_BATCH,
+                doc_id=target_doc_id,
+                limit=limit,
+            ).single()
+            deleted = int(record["deleted"]) if record else 0
+            if deleted == 0:
+                break
+            deleted_related += deleted
+
+        tx.run(_UPSERT_DOCUMENT, rows=[target_doc_row]).consume()
+
+        for batch in _iter_batches(chunk_payload, limit):
+            tx.run(_UPSERT_CHUNKS, rows=batch).consume()
+        for batch in _iter_batches(entity_payload, limit):
+            tx.run(_UPSERT_ENTITIES, rows=batch).consume()
+        for batch in _iter_batches(mention_payload, limit):
+            tx.run(_UPSERT_MENTIONS, rows=batch).consume()
+        for batch in _iter_batches(related_payload, limit):
+            tx.run(_UPSERT_RELATED, rows=batch).consume()
+
+        return {
+            "purged": {
+                "chunks": deleted_chunks,
+                "related_edges": deleted_related,
+            },
+            "written": {
+                "chunks": len(chunk_payload),
+                "entities": len(entity_payload),
+                "mentions": len(mention_payload),
+                "edges": len(related_payload),
+            },
+        }
+
+    with driver.session(database=database) as session:
+        result_raw = _execute_write_with_retry_any(
+            session,
+            _write_replace,
+            doc_id,
+            doc_row,
+            chunk_rows,
+            entity_rows,
+            mention_rows,
+            relationship_rows,
+            safe_batch,
+        )
+
+    if not isinstance(result_raw, dict):
+        result: dict[str, Any] = {
+            "purged": {"chunks": 0, "related_edges": 0},
+            "written": {
+                "chunks": len(chunk_rows),
+                "entities": len(entity_rows),
+                "mentions": len(mention_rows),
+                "edges": len(relationship_rows),
+            },
+        }
+    else:
+        result = result_raw
+
+    logger.info(
+        "Atomically replaced doc_id=%s: purged=%s written=%s",
+        doc_id,
+        result.get("purged", {}),
+        result.get("written", {}),
+    )
+    return result
 
 # ---------------------------------------------------------------------------
 # RELATED_TO relationship  (Entity)-[:RELATED_TO]->(Entity)

@@ -163,6 +163,11 @@ def ingest(
     entity_types: str = typer.Option(
         "", "--entity-types", help="Comma-separated entity types for LLM extraction",
     ),
+    replace_mode: str = typer.Option(
+        "atomic",
+        "--replace-mode",
+        help="Re-ingest strategy for same doc_id: 'atomic' (default) or 'non_atomic'",
+    ),
     max_retries: int = typer.Option(
         2, "--max-retries", min=0, help="Maximum retries per ingest stage on failure",
     ),
@@ -194,6 +199,14 @@ def ingest(
         typer.echo(str(exc), err=True)
         raise typer.Exit(code=1)
 
+    replace_mode_norm = replace_mode.strip().lower().replace("-", "_")
+    if replace_mode_norm not in {"atomic", "non_atomic"}:
+        typer.echo(
+            "Invalid --replace-mode. Use 'atomic' or 'non_atomic'.",
+            err=True,
+        )
+        raise typer.Exit(code=1)
+
     driver = get_driver(settings)
     services = build_service_container(settings, driver=driver)
     try:
@@ -204,6 +217,7 @@ def ingest(
             source=source,
             chunk_size=chunk_size,
             chunk_overlap=chunk_overlap,
+            replace_mode=replace_mode_norm,
         )
         job_id = services.ingest.enqueue_job(
             spec,

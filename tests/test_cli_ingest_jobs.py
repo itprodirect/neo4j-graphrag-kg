@@ -127,3 +127,33 @@ def test_ingest_run_processes_existing_job(
     assert "Completed job ingest::doc-2: 2 chunks, 3 entities, 1 edges in 0.42s" in result.output
     ingest_service.run_job.assert_called_once()
     mock_close_driver.assert_called_once()
+
+@patch("neo4j_graphrag_kg.cli.close_driver")
+@patch("neo4j_graphrag_kg.cli._build_extractor")
+@patch("neo4j_graphrag_kg.cli.build_service_container")
+@patch("neo4j_graphrag_kg.cli.get_driver")
+@patch("neo4j_graphrag_kg.cli.get_settings")
+def test_ingest_rejects_invalid_replace_mode(
+    mock_get_settings: MagicMock,
+    mock_get_driver: MagicMock,
+    mock_build_container: MagicMock,
+    mock_build_extractor: MagicMock,
+    mock_close_driver: MagicMock,
+    tmp_path: Path,
+) -> None:
+    mock_get_settings.return_value = _mock_settings()
+    mock_get_driver.return_value = MagicMock()
+    mock_build_extractor.return_value = ("simple", MagicMock())
+    mock_build_container.return_value = MagicMock(ingest=MagicMock())
+
+    result = runner.invoke(app, [
+        "ingest",
+        "--input", str(_write_input(tmp_path)),
+        "--doc-id", "doc-1",
+        "--title", "Doc 1",
+        "--replace-mode", "bad-mode",
+    ])
+
+    assert result.exit_code == 1
+    assert "Invalid --replace-mode" in result.output
+    mock_close_driver.assert_not_called()

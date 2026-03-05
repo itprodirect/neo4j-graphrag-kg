@@ -8,6 +8,7 @@ from __future__ import annotations
 from pathlib import Path
 from textwrap import dedent
 
+import pytest
 from neo4j import GraphDatabase
 from typer.testing import CliRunner
 
@@ -248,3 +249,96 @@ def test_reingest_changed_source_replaces_document_subgraph(tmp_path: Path) -> N
     assert int(stale_chunk_text or 0) == 0
     assert int(related_after or 0) == 0
     assert int(chunk_count_after or 0) > 0
+
+@neo4j_available
+def test_atomic_replace_rolls_back_on_write_failure(tmp_path: Path) -> None:
+    """Atomic replace should rollback purge if a downstream write fails."""
+    from neo4j_graphrag_kg.upsert import replace_document_subgraph_atomic
+
+    input_path = tmp_path / "replace-rollback.txt"
+    input_path.write_text(
+        "Neo4j and Cypher power graph analytics for teams.",
+        encoding="utf-8",
+    )
+
+    doc_id = "test-replace-rollback"
+    runner.invoke(app, ["reset", "--confirm"])
+    runner.invoke(app, ["init-db"])
+
+    first = runner.invoke(app, [
+        "ingest",
+        "--input", str(input_path),
+        "--doc-id", doc_id,
+        "--title", "Rollback Test",
+        "--replace-mode", "atomic",
+    ])
+    assert first.exit_code == 0
+
+    chunks_before = int(_single_value(
+        "MATCH (d:Document {id: $doc_id})-[:HAS_CHUNK]->(c:Chunk) RETURN count(c) AS c",
+        "c",
+        doc_id=doc_id,
+    ) or 0)
+    mentions_before = int(_single_value(
+        (
+            "MATCH (d:Document {id: $doc_id})-[:HAS_CHUNK]->(:Chunk)-[:MENTIONS]->"
+            "(e:Entity {id: 'cypher'}) RETURN count(*) AS c"
+        ),
+        "c",
+        doc_id=doc_id,
+    ) or 0)
+
+    assert chunks_before > 0
+    assert mentions_before > 0
+
+    settings = get_settings()
+    driver = GraphDatabase.driver(
+        settings.neo4j_uri,
+        auth=(settings.neo4j_user, settings.neo4j_password),
+    )
+    try:
+        with pytest.raises(Exception):
+            replace_document_subgraph_atomic(
+                driver,
+                settings.neo4j_database,
+                doc_id=doc_id,
+                title="Rollback Test",
+                source="",
+                chunk_rows=[
+                    {
+                        "id": f"{doc_id}::chunk::0",
+                        "document_id": doc_id,
+                        "idx": 0,
+                        "text": "Replacement content",
+                    }
+                ],
+                entity_rows=[
+                    {
+                        # Invalid id forces write failure mid-transaction.
+                        "id": None,
+                        "name": "Broken Entity",
+                        "type": "Term",
+                    }
+                ],
+                mention_rows=[],
+                relationship_rows=[],
+            )
+    finally:
+        driver.close()
+
+    chunks_after = int(_single_value(
+        "MATCH (d:Document {id: $doc_id})-[:HAS_CHUNK]->(c:Chunk) RETURN count(c) AS c",
+        "c",
+        doc_id=doc_id,
+    ) or 0)
+    mentions_after = int(_single_value(
+        (
+            "MATCH (d:Document {id: $doc_id})-[:HAS_CHUNK]->(:Chunk)-[:MENTIONS]->"
+            "(e:Entity {id: 'cypher'}) RETURN count(*) AS c"
+        ),
+        "c",
+        doc_id=doc_id,
+    ) or 0)
+
+    assert chunks_after == chunks_before
+    assert mentions_after == mentions_before
