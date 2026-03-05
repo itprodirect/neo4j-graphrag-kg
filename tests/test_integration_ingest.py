@@ -8,9 +8,11 @@ from __future__ import annotations
 from pathlib import Path
 from textwrap import dedent
 
+from neo4j import GraphDatabase
 from typer.testing import CliRunner
 
 from neo4j_graphrag_kg.cli import app
+from neo4j_graphrag_kg.config import get_settings
 from tests.conftest import neo4j_available
 
 runner = CliRunner()
@@ -29,6 +31,20 @@ def _write_demo(tmp_path: Path) -> Path:
     p = tmp_path / "demo.txt"
     p.write_text(_DEMO_TEXT, encoding="utf-8")
     return p
+
+
+def _single_value(cypher: str, key: str, **params: object) -> object:
+    settings = get_settings()
+    driver = GraphDatabase.driver(
+        settings.neo4j_uri,
+        auth=(settings.neo4j_user, settings.neo4j_password),
+    )
+    try:
+        with driver.session(database=settings.neo4j_database) as session:
+            record = session.run(cypher, **params).single()
+            return record[key] if record else None
+    finally:
+        driver.close()
 
 
 def _count_nodes(label: str = "") -> int:
@@ -117,13 +133,13 @@ class TestIngestIdempotency:
 
         # Counts must be stable (idempotent)
         assert nodes_after_2 == nodes_after_1, (
-            f"Node count changed: {nodes_after_1} → {nodes_after_2}"
+            f"Node count changed: {nodes_after_1} -> {nodes_after_2}"
         )
         assert rels_after_2 == rels_after_1, (
-            f"Rel count changed: {rels_after_1} → {rels_after_2}"
+            f"Rel count changed: {rels_after_1} -> {rels_after_2}"
         )
         assert entities_after_2 == entities_after_1, (
-            f"Entity count changed: {entities_after_1} → {entities_after_2}"
+            f"Entity count changed: {entities_after_1} -> {entities_after_2}"
         )
 
 
@@ -145,3 +161,90 @@ def test_query_returns_results(tmp_path: Path) -> None:
     ])
     assert result.exit_code == 0
     assert "row" in result.output.lower()
+
+
+@neo4j_available
+def test_reingest_changed_source_replaces_document_subgraph(tmp_path: Path) -> None:
+    """Changed-source re-ingest should remove stale chunks/mentions/edges for doc_id."""
+    input_path = tmp_path / "replace-doc.txt"
+    input_path.write_text(
+        "Neo4j and Cypher power graph analytics for teams.",
+        encoding="utf-8",
+    )
+
+    doc_id = "test-replace"
+    runner.invoke(app, ["reset", "--confirm"])
+    runner.invoke(app, ["init-db"])
+
+    first = runner.invoke(app, [
+        "ingest",
+        "--input", str(input_path),
+        "--doc-id", doc_id,
+        "--title", "Replace Test",
+    ])
+    assert first.exit_code == 0
+
+    mentions_before = _single_value(
+        (
+            "MATCH (d:Document {id: $doc_id})-[:HAS_CHUNK]->(:Chunk)-[:MENTIONS]->"
+            "(e:Entity {id: 'cypher'}) "
+            "RETURN count(*) AS c"
+        ),
+        "c",
+        doc_id=doc_id,
+    )
+    related_before = _single_value(
+        "MATCH ()-[r:RELATED_TO {doc_id: $doc_id}]-() RETURN count(r) AS c",
+        "c",
+        doc_id=doc_id,
+    )
+    assert int(mentions_before or 0) > 0
+    assert int(related_before or 0) > 0
+
+    # Overwrite source with content that removes Cypher mentions and co-occurrence edges.
+    input_path.write_text(
+        "Neo4j workflows are stable and predictable.",
+        encoding="utf-8",
+    )
+
+    second = runner.invoke(app, [
+        "ingest",
+        "--input", str(input_path),
+        "--doc-id", doc_id,
+        "--title", "Replace Test",
+    ])
+    assert second.exit_code == 0
+
+    stale_cypher_mentions = _single_value(
+        (
+            "MATCH (d:Document {id: $doc_id})-[:HAS_CHUNK]->(:Chunk)-[:MENTIONS]->"
+            "(e:Entity {id: 'cypher'}) "
+            "RETURN count(*) AS c"
+        ),
+        "c",
+        doc_id=doc_id,
+    )
+    stale_chunk_text = _single_value(
+        (
+            "MATCH (d:Document {id: $doc_id})-[:HAS_CHUNK]->(c:Chunk) "
+            "WHERE c.text CONTAINS 'Cypher' "
+            "RETURN count(c) AS c"
+        ),
+        "c",
+        doc_id=doc_id,
+    )
+    related_after = _single_value(
+        "MATCH ()-[r:RELATED_TO {doc_id: $doc_id}]-() RETURN count(r) AS c",
+        "c",
+        doc_id=doc_id,
+    )
+    chunk_count_after = _single_value(
+        "MATCH (d:Document {id: $doc_id})-[:HAS_CHUNK]->(c:Chunk) RETURN count(c) AS c",
+        "c",
+        doc_id=doc_id,
+    )
+
+    assert int(stale_cypher_mentions or 0) == 0
+    assert int(stale_chunk_text or 0) == 0
+    assert int(related_after or 0) == 0
+    assert int(chunk_count_after or 0) > 0

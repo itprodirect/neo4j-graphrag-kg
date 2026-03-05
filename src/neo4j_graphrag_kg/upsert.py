@@ -192,6 +192,80 @@ def upsert_mentions(
 
 
 # ---------------------------------------------------------------------------
+# Document-scoped reconciliation cleanup
+# ---------------------------------------------------------------------------
+
+_DELETE_DOC_CHUNK_BATCH = """\
+MATCH (:Document {id: $doc_id})-[:HAS_CHUNK]->(c:Chunk)
+WITH c LIMIT $limit
+DETACH DELETE c
+RETURN count(c) AS deleted
+"""
+
+_DELETE_DOC_RELATED_BATCH = """\
+MATCH ()-[r:RELATED_TO {doc_id: $doc_id}]->()
+WITH r LIMIT $limit
+DELETE r
+RETURN count(r) AS deleted
+"""
+
+
+def purge_document_subgraph(
+    driver: Driver,
+    database: str,
+    *,
+    doc_id: str,
+    batch_size: int = 1000,
+) -> dict[str, int]:
+    """Delete stale chunk/mention and document-scoped RELATED_TO data."""
+    safe_batch = max(1, int(batch_size))
+
+    def _delete_batch(tx: Any, query: str, target_doc_id: str, limit: int) -> int:
+        record = tx.run(query, doc_id=target_doc_id, limit=limit).single()
+        if not record:
+            return 0
+        return int(record["deleted"])
+
+    deleted_chunks = 0
+    deleted_related = 0
+
+    with driver.session(database=database) as session:
+        while True:
+            deleted_raw = session.execute_write(
+                _delete_batch,
+                _DELETE_DOC_CHUNK_BATCH,
+                doc_id,
+                safe_batch,
+            )
+            deleted = deleted_raw if isinstance(deleted_raw, int) else 0
+            if deleted == 0:
+                break
+            deleted_chunks += deleted
+
+        while True:
+            deleted_raw = session.execute_write(
+                _delete_batch,
+                _DELETE_DOC_RELATED_BATCH,
+                doc_id,
+                safe_batch,
+            )
+            deleted = deleted_raw if isinstance(deleted_raw, int) else 0
+            if deleted == 0:
+                break
+            deleted_related += deleted
+
+    logger.info(
+        "Purged doc_id=%s stale subgraph: chunks=%d related_edges=%d",
+        doc_id,
+        deleted_chunks,
+        deleted_related,
+    )
+    return {
+        "chunks": deleted_chunks,
+        "related_edges": deleted_related,
+    }
+
+# ---------------------------------------------------------------------------
 # RELATED_TO relationship  (Entity)-[:RELATED_TO]->(Entity)
 # ---------------------------------------------------------------------------
 

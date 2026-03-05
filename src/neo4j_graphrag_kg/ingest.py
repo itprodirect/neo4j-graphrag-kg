@@ -24,7 +24,8 @@ from neo4j_graphrag_kg.upsert import (
     upsert_document,
     upsert_entities,
     upsert_mentions,
-    upsert_related
+    upsert_related,
+    purge_document_subgraph,
 )
 
 logger = logging.getLogger(__name__)
@@ -214,6 +215,7 @@ def _stage_graph_write(
     mention_rows: list[dict[str, Any]],
     relationship_rows: list[dict[str, Any]],
 ) -> dict[str, Any]:
+    purge_document_subgraph(driver, database, doc_id=doc_id)
     upsert_document(driver, database, doc_id=doc_id, title=title, source=source)
     upsert_chunks(driver, database, chunk_rows)
     upsert_entities(driver, database, entity_rows)
@@ -761,7 +763,3 @@ def ingest_file(
     )
     logger.info("Ingestion complete: %s", summary)
     return summary
-
-
-
-
