@@ -46,6 +46,17 @@
   .link.highlighted { stroke-opacity: 1; stroke-width: 2.5px; }
   .node.dimmed { opacity: 0.15; }
   .link.dimmed { stroke-opacity: 0.05; }
+
+  .health-pill { display: inline-block; padding: 4px 8px; border-radius: 999px; font-size: 11px; font-weight: 600; letter-spacing: 0.3px; }
+  .health-pill.ok { background: #1e5f3a; color: #58d68d; }
+  .health-pill.attention { background: #5f3a1e; color: #f5b041; }
+  .jobs-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+  .jobs-item { padding: 8px; border: 1px solid #0f3460; border-radius: 6px; background: #1a1a2e; }
+  .jobs-title { font-size: 12px; color: #e0e0e0; font-weight: 600; }
+  .jobs-meta { font-size: 11px; color: #9aa0a6; margin-top: 4px; }
+  .jobs-error { font-size: 11px; color: #f5b7b1; margin-top: 6px; white-space: pre-wrap; }
+  .troubleshoot { font-size: 12px; color: #cfd3d8; line-height: 1.5; }
+  .troubleshoot code { color: #9ad0ff; }
 </style>
 </head>
 <body>
@@ -55,6 +66,7 @@
   <input id="search-input" type="text" placeholder="Search nodes..." />
   <input id="ask-input" type="text" placeholder="Ask a question about the graph..." />
   <button id="ask-btn">Ask</button>
+  <button id="refresh-btn">Refresh</button>
   <span class="status-badge" id="status-badge">loading...</span>
 </div>
 
@@ -71,6 +83,24 @@
     </div>
     <div id="node-details">
       <p style="color: #666; font-size: 13px;">Click a node to see details.</p>
+    </div>
+
+    <div class="section">
+      <h2>Graph Health</h2>
+      <div id="health-summary" class="value">Checking...</div>
+      <div id="health-checks" class="jobs-meta"></div>
+    </div>
+
+    <div class="section">
+      <h2>Recent Ingest Jobs</h2>
+      <ul id="jobs-list" class="jobs-list"></ul>
+    </div>
+
+    <div class="section">
+      <h2>Troubleshooting</h2>
+      <div id="troubleshoot-box" class="troubleshoot">
+        If graph health is not green, run <code>kg status</code>, then <code>kg ingest-status --job-id &lt;id&gt;</code> for failing jobs.
+      </div>
     </div>
   </div>
 </div>
@@ -338,6 +368,11 @@
   const askBtn = document.getElementById('ask-btn');
   const askInput = document.getElementById('ask-input');
   const answerBox = document.getElementById('answer-box');
+  const refreshBtn = document.getElementById('refresh-btn');
+  const healthSummary = document.getElementById('health-summary');
+  const healthChecks = document.getElementById('health-checks');
+  const jobsList = document.getElementById('jobs-list');
+  const troubleshootBox = document.getElementById('troubleshoot-box');
 
   async function doAsk() {
     const q = askInput.value.trim();
@@ -373,7 +408,6 @@
   askBtn.addEventListener('click', doAsk);
   askInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') doAsk(); });
 
-  // Load graph
   async function loadGraph() {
     try {
       const resp = await fetch(API + '/api/graph?limit=500');
@@ -385,15 +419,121 @@
     }
   }
 
-  // Load status
   async function loadStatus() {
     try {
       const resp = await fetch(API + '/api/status');
       const data = await resp.json();
       document.getElementById('status-badge').textContent =
         `${data.version} | ${data.nodes} nodes, ${data.relationships} rels`;
-    } catch (err) { /* ignore */ }
+    } catch (_err) {
+      document.getElementById('status-badge').textContent = 'Status unavailable';
+    }
   }
+
+  function setTroubleshootMessage(lines) {
+    troubleshootBox.textContent = '';
+    lines.forEach((line) => {
+      const p = document.createElement('div');
+      p.textContent = line;
+      troubleshootBox.appendChild(p);
+    });
+  }
+
+  async function loadDiagnostics() {
+    try {
+      const resp = await fetch(API + '/api/diagnostics');
+      const data = await resp.json();
+      if (!resp.ok) throw new Error(data.detail || 'Diagnostics failed');
+
+      const status = data.status || 'attention';
+      const staleTotal = Number(data.stale_total || 0);
+      healthSummary.textContent = '';
+      const pill = document.createElement('span');
+      pill.className = 'health-pill ' + (status === 'ok' ? 'ok' : 'attention');
+      pill.textContent = status === 'ok' ? 'Healthy' : 'Attention needed';
+      healthSummary.appendChild(pill);
+      const checks = data.checks || {};
+      healthChecks.textContent =
+        `stale=${staleTotal} | docs_without_chunks=${checks.documents_without_chunks || 0} | ` +
+        `orphan_chunks=${checks.orphan_chunks || 0} | related_without_doc=${checks.related_edges_without_document || 0}`;
+
+      if (status === 'ok') {
+        setTroubleshootMessage([
+          'Everything looks clean.',
+          'If answers look off, run: kg ask "<question>" --cypher-only',
+        ]);
+      } else {
+        setTroubleshootMessage([
+          'Stale indicators detected. Suggested order:',
+          '1) kg status',
+          '2) kg ingest-status --job-id <latest-failed-job>',
+          '3) re-run ingest with --replace-mode atomic for affected doc_id',
+        ]);
+      }
+    } catch (_err) {
+      healthSummary.textContent = 'Diagnostics unavailable';
+      healthChecks.textContent = 'Could not load graph consistency checks.';
+      setTroubleshootMessage([
+        'Diagnostics endpoint failed.',
+        'Check API logs and run: kg status',
+      ]);
+    }
+  }
+
+  function renderJobs(jobs) {
+    jobsList.textContent = '';
+    if (!Array.isArray(jobs) || jobs.length === 0) {
+      const li = document.createElement('li');
+      li.className = 'jobs-item';
+      li.textContent = 'No ingest jobs yet.';
+      jobsList.appendChild(li);
+      return;
+    }
+
+    jobs.forEach((job) => {
+      const li = document.createElement('li');
+      li.className = 'jobs-item';
+
+      const title = document.createElement('div');
+      title.className = 'jobs-title';
+      title.textContent = `${job.doc_id || '(unknown doc)'} - ${job.status}`;
+      li.appendChild(title);
+
+      const meta = document.createElement('div');
+      meta.className = 'jobs-meta';
+      meta.textContent = `stage=${job.stage} attempt=${job.attempt}/${(job.max_retries || 0) + 1} updated=${job.updated_at || 'n/a'}`;
+      li.appendChild(meta);
+
+      if (job.error) {
+        const err = document.createElement('div');
+        err.className = 'jobs-error';
+        err.textContent = job.error;
+        li.appendChild(err);
+      }
+
+      jobsList.appendChild(li);
+    });
+  }
+
+  async function loadIngestJobs() {
+    try {
+      const resp = await fetch(API + '/api/ingest/jobs?limit=8');
+      const data = await resp.json();
+      if (!resp.ok) throw new Error(data.detail || 'Ingest history failed');
+      renderJobs(data.jobs || []);
+    } catch (_err) {
+      renderJobs([]);
+    }
+  }
+
+  async function refreshAll() {
+    await Promise.all([loadStatus(), loadGraph(), loadDiagnostics(), loadIngestJobs()]);
+  }
+
+  refreshBtn.addEventListener('click', () => {
+    refreshBtn.disabled = true;
+    refreshAll().finally(() => { refreshBtn.disabled = false; });
+  });
 
   // Resize
   window.addEventListener('resize', () => {
@@ -401,9 +541,11 @@
     height = container.clientHeight;
     if (simulation) simulation.force('center', d3.forceCenter(width / 2, height / 2)).alpha(0.3).restart();
   });
-
-  loadStatus();
-  loadGraph();
+  refreshAll();
+  setInterval(() => {
+    loadDiagnostics();
+    loadIngestJobs();
+  }, 30000);
 })();
 </script>
 </body>

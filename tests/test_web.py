@@ -18,7 +18,7 @@ client = TestClient(app)
 
 
 # ====================================================================
-# Helpers — mock driver / settings
+# Helpers â€” mock driver / settings
 # ====================================================================
 
 
@@ -93,7 +93,7 @@ def _mock_driver_with_graph() -> MagicMock:
 
 
 # ====================================================================
-# GET / — Static HTML page
+# GET / â€” Static HTML page
 # ====================================================================
 
 
@@ -111,7 +111,7 @@ class TestIndexPage:
 
 
 # ====================================================================
-# GET /api/status — Neo4j status
+# GET /api/status â€” Neo4j status
 # ====================================================================
 
 
@@ -175,7 +175,7 @@ class TestStatusEndpoint:
 
 
 # ====================================================================
-# GET /api/graph — Full graph
+# GET /api/graph â€” Full graph
 # ====================================================================
 
 
@@ -286,7 +286,7 @@ class TestGraphDocumentEndpoint:
 
 
 # ====================================================================
-# POST /api/ask — RAG endpoint
+# POST /api/ask â€” RAG endpoint
 # ====================================================================
 
 
@@ -347,7 +347,7 @@ class TestAskEndpoint:
 
 
 # ====================================================================
-# CORS — headers present
+# CORS â€” headers present
 # ====================================================================
 
 
@@ -375,3 +375,84 @@ class TestCORS:
         )
         # CORS middleware returns 400 for disallowed origins
         assert resp.status_code == 400
+
+# ====================================================================
+# GET /api/diagnostics - graph consistency indicators
+# ====================================================================
+
+
+class TestDiagnosticsEndpoint:
+    """Tests for graph consistency diagnostics endpoint."""
+
+    @patch("neo4j_graphrag_kg.web.app.get_driver")
+    @patch("neo4j_graphrag_kg.web.app.get_settings")
+    def test_diagnostics_returns_indicator_payload(
+        self,
+        mock_settings: MagicMock,
+        mock_get_driver: MagicMock,
+    ) -> None:
+        settings = _mock_settings()
+        mock_settings.return_value = settings
+
+        driver = MagicMock()
+        session = MagicMock()
+        driver.session.return_value.__enter__ = MagicMock(return_value=session)
+        driver.session.return_value.__exit__ = MagicMock(return_value=False)
+
+        row_docs = {"c": 1}
+        row_chunks = {"c": 2}
+        row_related = {"c": 0}
+        session.run.side_effect = [
+            MagicMock(single=MagicMock(return_value=row_docs)),
+            MagicMock(single=MagicMock(return_value=row_chunks)),
+            MagicMock(single=MagicMock(return_value=row_related)),
+        ]
+
+        mock_get_driver.return_value = driver
+
+        resp = client.get("/api/diagnostics")
+        assert resp.status_code == 200
+        payload = resp.json()
+        assert payload["status"] == "attention"
+        assert payload["stale_total"] == 3
+        assert payload["checks"]["documents_without_chunks"] == 1
+        assert payload["checks"]["orphan_chunks"] == 2
+
+
+# ====================================================================
+# GET /api/ingest/jobs - recent ingest history
+# ====================================================================
+
+
+class TestIngestJobsEndpoint:
+    """Tests for ingest job history endpoint."""
+
+    @patch("neo4j_graphrag_kg.web.app._get_services")
+    def test_ingest_jobs_returns_recent_jobs(self, mock_get_services: MagicMock) -> None:
+        jobs = MagicMock()
+        jobs.list_jobs.return_value = [
+            {
+                "id": "ingest::doc-1",
+                "doc_id": "doc-1",
+                "status": "completed",
+                "stage": "completed",
+                "attempt": 1,
+                "max_retries": 2,
+                "updated_at": "2026-03-05T10:00:00+00:00",
+                "completed_at": "2026-03-05T10:00:10+00:00",
+                "error": "",
+                "summary": {"chunks": 2, "entities": 3, "edges": 1},
+            }
+        ]
+
+        ingest = MagicMock(jobs=jobs)
+        services = MagicMock(ingest=ingest)
+        mock_get_services.return_value = services
+
+        resp = client.get("/api/ingest/jobs?limit=5")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "jobs" in data
+        assert len(data["jobs"]) == 1
+        assert data["jobs"][0]["id"] == "ingest::doc-1"
+        assert data["jobs"][0]["status"] == "completed"

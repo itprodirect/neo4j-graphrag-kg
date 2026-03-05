@@ -279,3 +279,73 @@ async def status_endpoint() -> JSONResponse:
     except Exception as exc:
         logger.error("GET /api/status failed: %s", exc)
         raise HTTPException(status_code=500, detail="Service unavailable")
+
+@app.get("/api/ingest/jobs")
+async def ingest_jobs_endpoint(
+    limit: int = Query(10, ge=1, le=50),
+) -> JSONResponse:
+    """Return recent ingest jobs for UI history and troubleshooting."""
+    services = _get_services()
+    try:
+        jobs_raw = services.ingest.jobs.list_jobs(limit=limit)
+        jobs: list[dict[str, Any]] = []
+        for job in jobs_raw:
+            summary = job.get("summary") if isinstance(job.get("summary"), dict) else {}
+            jobs.append({
+                "id": str(job.get("id", "")),
+                "doc_id": str(job.get("doc_id", "")),
+                "status": str(job.get("status", "unknown")),
+                "stage": str(job.get("stage", "unknown")),
+                "attempt": int(job.get("attempt", 0)),
+                "max_retries": int(job.get("max_retries", 0)),
+                "updated_at": str(job.get("updated_at", "")),
+                "completed_at": str(job.get("completed_at", "")),
+                "error": str(job.get("error", "")),
+                "summary": summary,
+            })
+        return JSONResponse({"jobs": jobs})
+    except Exception as exc:
+        logger.error("GET /api/ingest/jobs failed: %s", exc)
+        raise HTTPException(status_code=500, detail="Could not load ingest history")
+
+
+@app.get("/api/diagnostics")
+async def diagnostics_endpoint() -> JSONResponse:
+    """Return lightweight graph consistency indicators for stale-data visibility."""
+    services = _get_services()
+    try:
+        with services.graph.session() as session:
+            docs_without_chunks_row = session.run(
+                "MATCH (d:Document) WHERE NOT (d)-[:HAS_CHUNK]->(:Chunk) "
+                "RETURN count(d) AS c"
+            ).single()
+            orphan_chunks_row = session.run(
+                "MATCH (c:Chunk) WHERE NOT (:Document)-[:HAS_CHUNK]->(c) "
+                "RETURN count(c) AS c"
+            ).single()
+            related_without_doc_row = session.run(
+                "MATCH ()-[r:RELATED_TO]->() "
+                "WHERE r.doc_id IS NOT NULL "
+                "AND NOT EXISTS { MATCH (:Document {id: r.doc_id}) } "
+                "RETURN count(r) AS c"
+            ).single()
+
+        docs_without_chunks = int(docs_without_chunks_row["c"]) if docs_without_chunks_row else 0
+        orphan_chunks = int(orphan_chunks_row["c"]) if orphan_chunks_row else 0
+        related_without_doc = int(related_without_doc_row["c"]) if related_without_doc_row else 0
+
+        stale_total = docs_without_chunks + orphan_chunks + related_without_doc
+        status = "ok" if stale_total == 0 else "attention"
+
+        return JSONResponse({
+            "status": status,
+            "stale_total": stale_total,
+            "checks": {
+                "documents_without_chunks": docs_without_chunks,
+                "orphan_chunks": orphan_chunks,
+                "related_edges_without_document": related_without_doc,
+            },
+        })
+    except Exception as exc:
+        logger.error("GET /api/diagnostics failed: %s", exc)
+        raise HTTPException(status_code=500, detail="Could not load diagnostics")
