@@ -1,14 +1,21 @@
 # V2 GitHub Issue Backlog
 
-Issue-ready backlog for the v2 rebuild.
+Issue-ready backlog for the V2 rebuild.
 
-## Backlog Status (as of 2026-03-04)
+## Backlog Status (as of 2026-03-05)
 
 | Item | Status |
 |---|---|
-| Backlog draft | Ready |
-| Label + issue script | Ready (`scripts/create-v2-issues.ps1`) |
-| GitHub issue creation | Pending valid `gh` authentication |
+| Backlog definition | Ready |
+| Label + milestone + issue automation | Ready (`scripts/create-v2-issues.ps1`) |
+| GitHub issue creation | Ready (requires `gh auth status` to pass) |
+
+## Milestone and Ownership Model
+
+- Default milestone: `V2 Rebuild`
+- Sequence model: issues are prefixed `[V2-01]` .. `[V2-16]`
+- Owner model: default assignee is `@me` (customizable per issue in script)
+- Idempotency: script skips already-existing issue titles
 
 ## Label Set
 
@@ -28,55 +35,30 @@ Issue-ready backlog for the v2 rebuild.
 
 ---
 
-## P0 Foundation Issues
+## Create or Sync Issues
 
-1. Preserve relationship direction in extraction to graph write.
-2. Add document versioning and source hash model.
-3. Implement replace-document reconciliation for re-ingest.
-4. Upgrade RAG response contract with citations and confidence.
-5. Expand Cypher safety policy and high-risk query blocking.
-6. Enforce CI gates for lint, typing, and Neo4j integration jobs.
-
-## P1 Execution Issues
-
-1. Add deterministic ingest report contract.
-2. Externalize large ingest artifacts from job node payload.
-3. Define stable domain protocols for stores and retrievers.
-4. Add `kg check` integrity diagnostics.
-5. Build retrieval and answer evaluation harness.
-6. Add `kg doctor` onboarding diagnostics.
-7. Redesign web UI for investigator workflow.
-8. Define release and versioning policy.
-
-## P2 Enhancements
-
-1. Add structured telemetry for ingest/query/rag.
-2. Ship synthetic investigation demo walkthrough polish.
-
----
-
-## Issue Template Pattern
-
-For each issue, include:
-
-- Problem statement
-- Scope boundaries
-- Acceptance criteria
-- Test plan
-- Rollout or migration notes
-
-## Create Issues Automatically
-
-Dry run:
+Dry run (recommended first):
 
 ```powershell
 powershell -NoProfile -File scripts/create-v2-issues.ps1
 ```
 
-Execute:
+Create labels + milestone + issues:
 
 ```powershell
 powershell -NoProfile -File scripts/create-v2-issues.ps1 -Execute
+```
+
+Custom milestone name:
+
+```powershell
+powershell -NoProfile -File scripts/create-v2-issues.ps1 -Execute -Milestone "V2 Rebuild"
+```
+
+Verify V2 issues:
+
+```powershell
+gh issue list --limit 200 --label v2
 ```
 
 If auth fails:
@@ -93,4 +75,4 @@ gh auth login -h github.com
 - `docs/V2_ROADMAP.md`
 - `scripts/create-v2-issues.ps1`
 
-Simple plan, clean execution, useful software.
+Ship cleanly, iterate fast, keep receipts.

@@ -1,14 +1,29 @@
 param(
-    [switch]$Execute
+    [switch]$Execute,
+    [string]$Milestone = "V2 Rebuild"
 )
 
 $ErrorActionPreference = "Stop"
 
 function Ensure-GhAuth {
-    $null = & gh auth status 2>$null
+    try {
+        $null = & gh auth status *> $null
+    }
+    catch {
+        # gh can emit status text on stderr even when authenticated
+    }
+
     if ($LASTEXITCODE -ne 0) {
         throw "GitHub CLI auth is invalid. Run 'gh auth login -h github.com' first."
     }
+}
+
+function Get-RepoSlug {
+    $slug = (& gh repo view --json nameWithOwner --jq .nameWithOwner).Trim()
+    if (-not $slug) {
+        throw "Unable to resolve repo slug from gh repo view."
+    }
+    return $slug
 }
 
 function Ensure-Label {
@@ -25,23 +40,87 @@ function Ensure-Label {
     }
 }
 
+function Ensure-Milestone {
+    param(
+        [string]$Name
+    )
+
+    $repo = Get-RepoSlug
+    $existingRaw = & gh api "repos/$repo/milestones?state=all&per_page=100"
+    if ($LASTEXITCODE -ne 0) {
+        throw "Failed to list milestones for $repo"
+    }
+
+    $existing = @($existingRaw | ConvertFrom-Json)
+    $match = $existing | Where-Object { $_.title -eq $Name }
+    if ($null -ne $match) {
+        return
+    }
+
+    & gh api "repos/$repo/milestones" --method POST -f title=$Name | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        throw "Failed to create milestone '$Name'"
+    }
+}
+
+function Test-IssueExists {
+    param(
+        [string]$Title
+    )
+
+    $found = (& gh issue list --state all --search ('"' + $Title + '" in:title') --limit 1 --json title --jq '.[0].title').Trim()
+    return ($LASTEXITCODE -eq 0 -and $found -eq $Title)
+}
+
 function New-Issue {
     param(
-        [hashtable]$Issue
+        [hashtable]$Issue,
+        [string]$MilestoneName
     )
+
+    $title = "[V2-{0:d2}] {1}" -f [int]$Issue.Sequence, $Issue.Title
+
+    if (Test-IssueExists -Title $title) {
+        Write-Host "Skip existing issue: $title"
+        return
+    }
+
+    $owners = @($Issue.Owners)
+    if ($owners.Count -eq 0) {
+        $owners = @("@me")
+    }
+
+    $body = @"
+## Sequence
+$($Issue.Sequence) / 16
+
+## Owner(s)
+$($owners -join ", ")
+
+$($Issue.Body)
+"@
 
     $tmp = New-TemporaryFile
     try {
-        Set-Content -LiteralPath $tmp -Value $Issue.Body -Encoding utf8
+        Set-Content -LiteralPath $tmp -Value $body -Encoding utf8
 
-        $args = @("issue", "create", "--title", $Issue.Title, "--body-file", $tmp)
+        $args = @(
+            "issue", "create",
+            "--title", $title,
+            "--body-file", $tmp,
+            "--milestone", $MilestoneName
+        )
+
         foreach ($label in $Issue.Labels) {
             $args += @("--label", $label)
+        }
+        foreach ($owner in $owners) {
+            $args += @("--assignee", $owner)
         }
 
         & gh @args
         if ($LASTEXITCODE -ne 0) {
-            throw "Failed to create issue: $($Issue.Title)"
+            throw "Failed to create issue: $title"
         }
     }
     finally {
@@ -51,7 +130,9 @@ function New-Issue {
 
 $issues = @(
     @{
-        Title = "V2: Preserve relationship direction in extraction to graph writes"
+        Sequence = 1
+        Title = "Preserve relationship direction in extraction to graph writes"
+        Owners = @("@me")
         Labels = @("v2", "phase:1-correctness", "type:feature", "priority:p0")
         Body = @"
 ## Problem
@@ -68,7 +149,9 @@ Current extraction/write flow can lose relationship direction semantics.
 "@
     },
     @{
-        Title = "V2: Add document versioning and source hash model"
+        Sequence = 2
+        Title = "Add document versioning and source hash model"
+        Owners = @("@me")
         Labels = @("v2", "phase:1-correctness", "type:feature", "priority:p0")
         Body = @"
 ## Scope
@@ -82,7 +165,9 @@ Current extraction/write flow can lose relationship direction semantics.
 "@
     },
     @{
-        Title = "V2: Implement replace-document reconciliation for re-ingest"
+        Sequence = 3
+        Title = "Implement replace-document reconciliation for re-ingest"
+        Owners = @("@me")
         Labels = @("v2", "phase:1-correctness", "type:feature", "priority:p0")
         Body = @"
 ## Scope
@@ -95,7 +180,51 @@ Current extraction/write flow can lose relationship direction semantics.
 "@
     },
     @{
-        Title = "V2: Add deterministic ingest report contract"
+        Sequence = 4
+        Title = "Upgrade RAG response contract with citations and confidence"
+        Owners = @("@me")
+        Labels = @("v2", "phase:3-rag", "type:feature", "priority:p0")
+        Body = @"
+## Scope
+- Include citation IDs and insufficient-evidence signaling.
+- Surface citations in CLI and API outputs.
+
+## Acceptance Criteria
+- Contract is stable and test-covered.
+"@
+    },
+    @{
+        Sequence = 5
+        Title = "Expand Cypher safety policy and high-risk query blocks"
+        Owners = @("@me")
+        Labels = @("v2", "phase:3-rag", "type:security", "priority:p0")
+        Body = @"
+## Scope
+- Extend query validator to high-risk call patterns.
+- Improve safe failure responses.
+
+## Acceptance Criteria
+- Bypass attempts are blocked by tests.
+"@
+    },
+    @{
+        Sequence = 6
+        Title = "Enforce CI gates for lint, type-check, and Neo4j integration"
+        Owners = @("@me")
+        Labels = @("v2", "phase:5-devsecops", "type:feature", "priority:p0")
+        Body = @"
+## Scope
+- Add ruff and mypy checks to CI.
+- Run integration tests with ephemeral Neo4j in CI.
+
+## Acceptance Criteria
+- Required checks protect main branch.
+"@
+    },
+    @{
+        Sequence = 7
+        Title = "Add deterministic ingest report contract"
+        Owners = @("@me")
         Labels = @("v2", "phase:1-correctness", "type:feature", "priority:p1")
         Body = @"
 ## Scope
@@ -103,11 +232,13 @@ Current extraction/write flow can lose relationship direction semantics.
 - Optional JSON output for automation.
 
 ## Acceptance Criteria
-- `kg ingest` report is deterministic and documented.
+- kg ingest report is deterministic and documented.
 "@
     },
     @{
-        Title = "V2: Externalize large ingest stage artifacts from Neo4j job node"
+        Sequence = 8
+        Title = "Externalize large ingest stage artifacts from Neo4j job node"
+        Owners = @("@me")
         Labels = @("v2", "phase:2-platform", "type:refactor", "priority:p1")
         Body = @"
 ## Scope
@@ -120,7 +251,9 @@ Current extraction/write flow can lose relationship direction semantics.
 "@
     },
     @{
-        Title = "V2: Define stable domain protocols for stores and retrievers"
+        Sequence = 9
+        Title = "Define stable domain protocols for stores and retrievers"
+        Owners = @("@me")
         Labels = @("v2", "phase:2-platform", "type:refactor", "priority:p1")
         Body = @"
 ## Scope
@@ -132,7 +265,9 @@ Current extraction/write flow can lose relationship direction semantics.
 "@
     },
     @{
-        Title = "V2: Add `kg check` graph integrity diagnostics"
+        Sequence = 10
+        Title = "Add kg check graph integrity diagnostics"
+        Owners = @("@me")
         Labels = @("v2", "phase:2-platform", "type:feature", "priority:p1")
         Body = @"
 ## Scope
@@ -144,43 +279,9 @@ Current extraction/write flow can lose relationship direction semantics.
 "@
     },
     @{
-        Title = "V2: Add structured telemetry for ingest, query, and rag operations"
-        Labels = @("v2", "phase:2-platform", "type:feature", "priority:p2")
-        Body = @"
-## Scope
-- Structured logs and stable metric fields.
-- Track latency, retries, row counts, and tx counts.
-
-## Acceptance Criteria
-- Logs are parseable and sensitive values are redacted.
-"@
-    },
-    @{
-        Title = "V2: Upgrade RAG response contract with citations and confidence"
-        Labels = @("v2", "phase:3-rag", "type:feature", "priority:p0")
-        Body = @"
-## Scope
-- Include citation IDs and insufficient-evidence signaling.
-- Surface citations in CLI and API outputs.
-
-## Acceptance Criteria
-- Contract is stable and test-covered.
-"@
-    },
-    @{
-        Title = "V2: Expand Cypher safety policy and high-risk query blocks"
-        Labels = @("v2", "phase:3-rag", "type:security", "priority:p0")
-        Body = @"
-## Scope
-- Extend query validator to high-risk call patterns.
-- Improve safe failure responses.
-
-## Acceptance Criteria
-- Bypass attempts are blocked by tests.
-"@
-    },
-    @{
-        Title = "V2: Build retrieval and answer evaluation harness"
+        Sequence = 11
+        Title = "Build retrieval and answer evaluation harness"
+        Owners = @("@me")
         Labels = @("v2", "phase:3-rag", "type:feature", "priority:p1")
         Body = @"
 ## Scope
@@ -192,7 +293,9 @@ Current extraction/write flow can lose relationship direction semantics.
 "@
     },
     @{
-        Title = "V2: Add `kg doctor` onboarding diagnostics command"
+        Sequence = 12
+        Title = "Add kg doctor onboarding diagnostics command"
+        Owners = @("@me")
         Labels = @("v2", "phase:4-ux", "type:feature", "priority:p1")
         Body = @"
 ## Scope
@@ -204,7 +307,9 @@ Current extraction/write flow can lose relationship direction semantics.
 "@
     },
     @{
-        Title = "V2: Redesign web UI for investigator workflow"
+        Sequence = 13
+        Title = "Redesign web UI for investigator workflow"
+        Owners = @("@me")
         Labels = @("v2", "phase:4-ux", "type:feature", "priority:p1")
         Body = @"
 ## Scope
@@ -216,31 +321,9 @@ Current extraction/write flow can lose relationship direction semantics.
 "@
     },
     @{
-        Title = "V2: Ship synthetic fraud and E&O demo walkthrough"
-        Labels = @("v2", "phase:4-ux", "type:docs", "priority:p2")
-        Body = @"
-## Scope
-- End-to-end synthetic investigation dataset and query guide.
-- Scripted ingest and demo flow.
-
-## Acceptance Criteria
-- Demo works without real-world sensitive data.
-"@
-    },
-    @{
-        Title = "V2: Enforce CI gates for lint, type-check, and Neo4j integration"
-        Labels = @("v2", "phase:5-devsecops", "type:feature", "priority:p0")
-        Body = @"
-## Scope
-- Add ruff and mypy checks to CI.
-- Run integration tests with ephemeral Neo4j in CI.
-
-## Acceptance Criteria
-- Required checks protect main branch.
-"@
-    },
-    @{
-        Title = "V2: Define release and versioning policy for public interfaces"
+        Sequence = 14
+        Title = "Define release and versioning policy for public interfaces"
+        Owners = @("@me")
         Labels = @("v2", "phase:5-devsecops", "type:docs", "priority:p1")
         Body = @"
 ## Scope
@@ -249,6 +332,34 @@ Current extraction/write flow can lose relationship direction semantics.
 
 ## Acceptance Criteria
 - Policy is referenced by CONTRIBUTING or maintainer docs.
+"@
+    },
+    @{
+        Sequence = 15
+        Title = "Add structured telemetry for ingest, query, and rag operations"
+        Owners = @("@me")
+        Labels = @("v2", "phase:2-platform", "type:feature", "priority:p2")
+        Body = @"
+## Scope
+- Structured logs and stable metric fields.
+- Track latency, retries, row counts, and transaction counts.
+
+## Acceptance Criteria
+- Logs are parseable and sensitive values are redacted.
+"@
+    },
+    @{
+        Sequence = 16
+        Title = "Ship synthetic fraud and E&O demo walkthrough"
+        Owners = @("@me")
+        Labels = @("v2", "phase:4-ux", "type:docs", "priority:p2")
+        Body = @"
+## Scope
+- End-to-end synthetic investigation dataset and query guide.
+- Scripted ingest and demo flow.
+
+## Acceptance Criteria
+- Demo works without real-world sensitive data.
 "@
     }
 )
@@ -269,14 +380,21 @@ $labelDefinitions = @(
     @{ Name = "priority:p2"; Color = "fbca04"; Description = "Medium priority" }
 )
 
+$ordered = $issues | Sort-Object { [int]$_.Sequence }
+
 if (-not $Execute) {
     Write-Host "Dry run mode. No issues created."
-    Write-Host "Planned issues: $($issues.Count)"
-    foreach ($issue in $issues) {
-        Write-Host " - $($issue.Title)"
+    Write-Host "Milestone: $Milestone"
+    Write-Host "Planned issues: $($ordered.Count)"
+    foreach ($issue in $ordered) {
+        $owners = @($issue.Owners)
+        if ($owners.Count -eq 0) {
+            $owners = @("@me")
+        }
+        Write-Host (" - [V2-{0:d2}] {1} (owners: {2})" -f [int]$issue.Sequence, $issue.Title, ($owners -join ", "))
     }
     Write-Host ""
-    Write-Host "To create labels and issues, run:"
+    Write-Host "To create labels, milestone, and issues, run:"
     Write-Host "  powershell -NoProfile -File scripts/create-v2-issues.ps1 -Execute"
     exit 0
 }
@@ -287,9 +405,10 @@ foreach ($label in $labelDefinitions) {
     Ensure-Label -Name $label.Name -Color $label.Color -Description $label.Description
 }
 
-foreach ($issue in $issues) {
-    New-Issue -Issue $issue
+Ensure-Milestone -Name $Milestone
+
+foreach ($issue in $ordered) {
+    New-Issue -Issue $issue -MilestoneName $Milestone
 }
 
-Write-Host "Created $($issues.Count) issues."
-
+Write-Host "V2 backlog sync complete for milestone '$Milestone'."
