@@ -24,7 +24,7 @@ from neo4j_graphrag_kg.upsert import (
     upsert_document,
     upsert_entities,
     upsert_mentions,
-    upsert_related,
+    upsert_related
 )
 
 logger = logging.getLogger(__name__)
@@ -129,22 +129,18 @@ def _stage_extract(
             tgt_slug = slugify(rel.target)
             if not src_slug or not tgt_slug or src_slug == tgt_slug:
                 continue
-
-            pair_key_src, pair_key_tgt = (
-                (src_slug, tgt_slug) if src_slug <= tgt_slug else (tgt_slug, src_slug)
-            )
             if src_slug not in all_entities:
                 all_entities[src_slug] = {"name": rel.source, "type": "Term"}
             if tgt_slug not in all_entities:
                 all_entities[tgt_slug] = {"name": rel.target, "type": "Term"}
 
             rel_type = rel.type or "RELATED_TO"
-            key = (pair_key_src, pair_key_tgt, rel_type)
+            key = (src_slug, tgt_slug, rel_type)
 
             if key not in edge_acc:
                 edge_acc[key] = {
-                    "source_id": pair_key_src,
-                    "target_id": pair_key_tgt,
+                    "source_id": src_slug,
+                    "target_id": tgt_slug,
                     "doc_id": doc_id,
                     "chunk_id": cid_raw,
                     "extractor": ext_label,
@@ -765,3 +761,7 @@ def ingest_file(
     )
     logger.info("Ingestion complete: %s", summary)
     return summary
+
+
+
+
