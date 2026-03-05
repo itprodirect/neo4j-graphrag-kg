@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import threading
 import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -494,10 +495,22 @@ class IngestPipelineService:
         self._driver = driver
         self._database = database
         self._job_store = job_store or Neo4jIngestJobStore(driver, database)
+        self._doc_run_locks: dict[str, threading.Lock] = {}
+        self._doc_run_locks_guard = threading.Lock()
 
     @property
     def jobs(self) -> Neo4jIngestJobStore:
         return self._job_store
+
+    def _lock_for_doc(self, doc_id: str) -> threading.Lock:
+        key = doc_id or "__missing_doc_id__"
+        with self._doc_run_locks_guard:
+            existing = self._doc_run_locks.get(key)
+            if existing is not None:
+                return existing
+            created = threading.Lock()
+            self._doc_run_locks[key] = created
+            return created
 
     def enqueue_job(
         self,
@@ -518,7 +531,13 @@ class IngestPipelineService:
         *,
         extractor: BaseExtractor | None = None,
     ) -> dict[str, Any]:
-        return asyncio.run(self.run_job_async(job_id, extractor=extractor))
+        job = self._job_store.get_job(job_id)
+        if job is None:
+            raise ValueError(f"Ingest job not found: {job_id}")
+
+        lock = self._lock_for_doc(str(job.get("doc_id") or job_id))
+        with lock:
+            return asyncio.run(self.run_job_async(job_id, extractor=extractor))
 
     async def run_job_async(
         self,
