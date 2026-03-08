@@ -123,7 +123,7 @@ def test_ingest_job_completes_and_persists_summary(
     assert isinstance(job["summary"], dict)
     assert job["summary"]["doc_id"] == "doc-1"
     assert job["summary"]["replace_mode"] == "atomic"
-    assert job["summary"]["purged"] == {"chunks": 0, "related_edges": 0}
+    assert job["summary"]["purged"] == {"chunks": 0, "related_edges": 0, "entities": 0}
     assert job["summary"]["written"]["chunks"] == 1
 
 

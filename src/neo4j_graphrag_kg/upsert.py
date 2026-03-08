@@ -240,6 +240,70 @@ DELETE r
 RETURN count(r) AS deleted
 """
 
+_DELETE_ORPHAN_ENTITY_BATCH = """\
+MATCH (e:Entity)
+WHERE NOT EXISTS { MATCH (:Chunk)-[:MENTIONS]->(e) }
+  AND NOT EXISTS { MATCH (e)-[:RELATED_TO]-() }
+WITH e LIMIT $limit
+DETACH DELETE e
+RETURN count(e) AS deleted
+"""
+
+
+def _delete_batch_count(tx: Any, query: str, **params: Any) -> int:
+    record = tx.run(query, **params).single()
+    if not record:
+        return 0
+    return int(record["deleted"])
+
+
+def _purge_document_subgraph_tx(
+    tx: Any,
+    target_doc_id: str,
+    limit: int,
+) -> dict[str, int]:
+    deleted_chunks = 0
+    deleted_related = 0
+    deleted_entities = 0
+
+    while True:
+        deleted = _delete_batch_count(
+            tx,
+            _DELETE_DOC_CHUNK_BATCH,
+            doc_id=target_doc_id,
+            limit=limit,
+        )
+        if deleted == 0:
+            break
+        deleted_chunks += deleted
+
+    while True:
+        deleted = _delete_batch_count(
+            tx,
+            _DELETE_DOC_RELATED_BATCH,
+            doc_id=target_doc_id,
+            limit=limit,
+        )
+        if deleted == 0:
+            break
+        deleted_related += deleted
+
+    while True:
+        deleted = _delete_batch_count(
+            tx,
+            _DELETE_ORPHAN_ENTITY_BATCH,
+            limit=limit,
+        )
+        if deleted == 0:
+            break
+        deleted_entities += deleted
+
+    return {
+        "chunks": deleted_chunks,
+        "related_edges": deleted_related,
+        "entities": deleted_entities,
+    }
+
 
 def purge_document_subgraph(
     driver: Driver,
@@ -248,53 +312,29 @@ def purge_document_subgraph(
     doc_id: str,
     batch_size: int = 1000,
 ) -> dict[str, int]:
-    """Delete stale chunk/mention and document-scoped RELATED_TO data."""
+    """Delete stale chunk/mention, doc-scoped edges, and orphan entities."""
     safe_batch = max(1, int(batch_size))
 
-    def _delete_batch(tx: Any, query: str, target_doc_id: str, limit: int) -> int:
-        record = tx.run(query, doc_id=target_doc_id, limit=limit).single()
-        if not record:
-            return 0
-        return int(record["deleted"])
-
-    deleted_chunks = 0
-    deleted_related = 0
-
     with driver.session(database=database) as session:
-        while True:
-            deleted_raw = session.execute_write(
-                _delete_batch,
-                _DELETE_DOC_CHUNK_BATCH,
-                doc_id,
-                safe_batch,
-            )
-            deleted = deleted_raw if isinstance(deleted_raw, int) else 0
-            if deleted == 0:
-                break
-            deleted_chunks += deleted
+        result_raw = session.execute_write(
+            _purge_document_subgraph_tx,
+            doc_id,
+            safe_batch,
+        )
 
-        while True:
-            deleted_raw = session.execute_write(
-                _delete_batch,
-                _DELETE_DOC_RELATED_BATCH,
-                doc_id,
-                safe_batch,
-            )
-            deleted = deleted_raw if isinstance(deleted_raw, int) else 0
-            if deleted == 0:
-                break
-            deleted_related += deleted
-
-    logger.info(
-        "Purged doc_id=%s stale subgraph: chunks=%d related_edges=%d",
-        doc_id,
-        deleted_chunks,
-        deleted_related,
-    )
-    return {
-        "chunks": deleted_chunks,
-        "related_edges": deleted_related,
+    result = result_raw if isinstance(result_raw, dict) else {
+        "chunks": 0,
+        "related_edges": 0,
+        "entities": 0,
     }
+    logger.info(
+        "Purged doc_id=%s stale subgraph: chunks=%d related_edges=%d entities=%d",
+        doc_id,
+        result["chunks"],
+        result["related_edges"],
+        result["entities"],
+    )
+    return result
 
 
 def replace_document_subgraph_atomic(
@@ -335,30 +375,7 @@ def replace_document_subgraph_atomic(
         related_payload: list[dict[str, Any]],
         limit: int,
     ) -> dict[str, Any]:
-        deleted_chunks = 0
-        deleted_related = 0
-
-        while True:
-            record = tx.run(
-                _DELETE_DOC_CHUNK_BATCH,
-                doc_id=target_doc_id,
-                limit=limit,
-            ).single()
-            deleted = int(record["deleted"]) if record else 0
-            if deleted == 0:
-                break
-            deleted_chunks += deleted
-
-        while True:
-            record = tx.run(
-                _DELETE_DOC_RELATED_BATCH,
-                doc_id=target_doc_id,
-                limit=limit,
-            ).single()
-            deleted = int(record["deleted"]) if record else 0
-            if deleted == 0:
-                break
-            deleted_related += deleted
+        purged = _purge_document_subgraph_tx(tx, target_doc_id, limit)
 
         tx.run(_UPSERT_DOCUMENT, rows=[target_doc_row]).consume()
 
@@ -372,10 +389,7 @@ def replace_document_subgraph_atomic(
             tx.run(_UPSERT_RELATED, rows=batch).consume()
 
         return {
-            "purged": {
-                "chunks": deleted_chunks,
-                "related_edges": deleted_related,
-            },
+            "purged": purged,
             "written": {
                 "chunks": len(chunk_payload),
                 "entities": len(entity_payload),
@@ -399,7 +413,7 @@ def replace_document_subgraph_atomic(
 
     if not isinstance(result_raw, dict):
         result: dict[str, Any] = {
-            "purged": {"chunks": 0, "related_edges": 0},
+            "purged": {"chunks": 0, "related_edges": 0, "entities": 0},
             "written": {
                 "chunks": len(chunk_rows),
                 "entities": len(entity_rows),

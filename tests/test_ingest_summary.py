@@ -21,7 +21,7 @@ def test_ingest_summary_chars_uses_full_file_length(
         "replace_document_subgraph_atomic",
         lambda *a, **k: {
             "replace_mode": "atomic",
-            "purged": {"chunks": 0, "related_edges": 0},
+            "purged": {"chunks": 0, "related_edges": 0, "entities": 0},
             "written": {"chunks": 1, "entities": 1, "mentions": 1, "edges": 0},
         },
     )
@@ -36,6 +36,6 @@ def test_ingest_summary_chars_uses_full_file_length(
 
     assert summary["chars"] == len(content)
     assert summary["replace_mode"] == "atomic"
-    assert summary["purged"] == {"chunks": 0, "related_edges": 0}
+    assert summary["purged"] == {"chunks": 0, "related_edges": 0, "entities": 0}
     assert summary["written"]["chunks"] == 1
     assert summary["written"]["mentions"] >= 0

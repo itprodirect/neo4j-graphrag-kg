@@ -239,6 +239,10 @@ def test_reingest_changed_source_replaces_document_subgraph(tmp_path: Path) -> N
         "c",
         doc_id=doc_id,
     )
+    orphan_cypher_entity = _single_value(
+        "MATCH (e:Entity {id: 'cypher'}) RETURN count(e) AS c",
+        "c",
+    )
     chunk_count_after = _single_value(
         "MATCH (d:Document {id: $doc_id})-[:HAS_CHUNK]->(c:Chunk) RETURN count(c) AS c",
         "c",
@@ -248,6 +252,7 @@ def test_reingest_changed_source_replaces_document_subgraph(tmp_path: Path) -> N
     assert int(stale_cypher_mentions or 0) == 0
     assert int(stale_chunk_text or 0) == 0
     assert int(related_after or 0) == 0
+    assert int(orphan_cypher_entity or 0) == 0
     assert int(chunk_count_after or 0) > 0
 
 @neo4j_available

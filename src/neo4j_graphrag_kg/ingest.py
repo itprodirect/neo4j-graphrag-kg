@@ -291,6 +291,7 @@ def _build_summary(
     purged = {
         "chunks": int(purged_source.get("chunks", 0) or 0),
         "related_edges": int(purged_source.get("related_edges", 0) or 0),
+        "entities": int(purged_source.get("entities", 0) or 0),
     }
     written = {
         "chunks": int(written_source.get("chunks", len(chunk_rows)) or 0),

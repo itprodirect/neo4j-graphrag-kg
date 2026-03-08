@@ -21,7 +21,7 @@ def test_stage_graph_write_defaults_to_atomic(monkeypatch: pytest.MonkeyPatch) -
     def _atomic(*_args: object, **_kwargs: object) -> dict[str, object]:
         calls["atomic"] += 1
         return {
-            "purged": {"chunks": 1, "related_edges": 1},
+            "purged": {"chunks": 1, "related_edges": 1, "entities": 0},
             "written": {"chunks": 1, "entities": 1, "mentions": 1, "edges": 1},
         }
 
@@ -75,7 +75,7 @@ def test_stage_graph_write_non_atomic_mode_uses_legacy_path(
 
     def _purge(*_args: object, **_kwargs: object) -> dict[str, int]:
         calls["purge"] += 1
-        return {"chunks": 2, "related_edges": 3}
+        return {"chunks": 2, "related_edges": 3, "entities": 4}
 
     def _bump(key: str) -> None:
         calls[key] += 1
@@ -104,7 +104,7 @@ def test_stage_graph_write_non_atomic_mode_uses_legacy_path(
     )
 
     assert result["replace_mode"] == "non_atomic"
-    assert result["purged"] == {"chunks": 2, "related_edges": 3}
+    assert result["purged"] == {"chunks": 2, "related_edges": 3, "entities": 4}
     assert calls == {
         "purge": 1,
         "doc": 1,
