@@ -39,6 +39,10 @@
   #answer-box .answer-text { color: #e0e0e0; }
   #answer-box .answer-cypher { color: #888; font-size: 11px; margin-top: 8px; font-family: monospace; }
   #answer-box .answer-meta { color: #666; font-size: 11px; margin-top: 4px; }
+  #answer-box .answer-trust { font-size: 11px; margin-top: 4px; }
+  #answer-box .answer-trust.ok { color: #58d68d; }
+  #answer-box .answer-trust.attention { color: #f5b041; }
+  #answer-box .answer-citations { color: #aaa; font-size: 11px; margin-top: 6px; line-height: 1.4; }
 
   .node-label { font-size: 10px; fill: #ccc; pointer-events: none; text-anchor: middle; dominant-baseline: central; }
   .edge-label { font-size: 8px; fill: #666; pointer-events: none; text-anchor: middle; }
@@ -80,6 +84,8 @@
       <div class="answer-text" id="answer-text"></div>
       <div class="answer-cypher" id="answer-cypher"></div>
       <div class="answer-meta" id="answer-meta"></div>
+      <div class="answer-trust" id="answer-trust"></div>
+      <div class="answer-citations" id="answer-citations"></div>
     </div>
     <div id="node-details">
       <p style="color: #666; font-size: 13px;">Click a node to see details.</p>
@@ -383,6 +389,9 @@
     document.getElementById('answer-text').textContent = 'Generating answer...';
     document.getElementById('answer-cypher').textContent = '';
     document.getElementById('answer-meta').textContent = '';
+    document.getElementById('answer-trust').textContent = '';
+    document.getElementById('answer-trust').className = 'answer-trust';
+    document.getElementById('answer-citations').textContent = '';
 
     try {
       const resp = await fetch(API + '/api/ask', {
@@ -395,6 +404,17 @@
         document.getElementById('answer-text').textContent = data.answer || '(no answer)';
         document.getElementById('answer-cypher').textContent = 'Cypher: ' + (data.cypher || '');
         document.getElementById('answer-meta').textContent = `${data.row_count || 0} rows in ${data.elapsed_s || 0}s`;
+
+        const trustEl = document.getElementById('answer-trust');
+        const confidence = Number(data.confidence || 0).toFixed(2);
+        const evidenceLabel = data.insufficient_evidence ? 'insufficient evidence' : 'grounded in query results';
+        trustEl.textContent = `Confidence ${confidence} - ${evidenceLabel}`;
+        trustEl.className = 'answer-trust ' + (data.insufficient_evidence ? 'attention' : 'ok');
+
+        const citations = Array.isArray(data.citations) ? data.citations : [];
+        document.getElementById('answer-citations').textContent = citations.length
+          ? 'Citations: ' + citations.map(c => `[${c.row}] ${c.preview}`).join(' | ')
+          : 'Citations: none';
       } else {
         document.getElementById('answer-text').textContent = 'Error: ' + (data.detail || resp.statusText);
       }

@@ -319,7 +319,7 @@ class TestAskEndpoint:
         mock_get_driver.return_value = MagicMock()
 
         mock_t2c.return_value = "MATCH (n) RETURN n"
-        mock_exec.return_value = [{"name": "Alice"}]
+        mock_exec.return_value = [{"name": "Alice", "type": "Person"}]
         mock_answer.return_value = "Alice is a person."
 
         resp = client.post("/api/ask", json={"question": "Who is Alice?"})
@@ -329,6 +329,38 @@ class TestAskEndpoint:
         assert "cypher" in data
         assert "answer" in data
         assert "elapsed_s" in data
+        assert data["confidence"] > 0.0
+        assert data["insufficient_evidence"] is False
+        assert data["citations"][0]["row"] == 1
+        assert "Alice" in data["citations"][0]["preview"]
+
+    @patch("neo4j_graphrag_kg.rag.pipeline.text_to_cypher")
+    @patch("neo4j_graphrag_kg.rag.pipeline._execute_cypher")
+    @patch("neo4j_graphrag_kg.rag.pipeline.generate_answer")
+    @patch("neo4j_graphrag_kg.web.app.get_driver")
+    @patch("neo4j_graphrag_kg.web.app.get_settings")
+    def test_ask_marks_insufficient_evidence_when_no_rows(
+        self,
+        mock_settings: MagicMock,
+        mock_get_driver: MagicMock,
+        mock_answer: MagicMock,
+        mock_exec: MagicMock,
+        mock_t2c: MagicMock,
+    ) -> None:
+        settings = _mock_settings(llm_api_key="test-key")
+        mock_settings.return_value = settings
+        mock_get_driver.return_value = MagicMock()
+
+        mock_t2c.return_value = "MATCH (n) RETURN n"
+        mock_exec.return_value = []
+        mock_answer.return_value = "I do not have enough evidence."
+
+        resp = client.post("/api/ask", json={"question": "Who is Alice?"})
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["citations"] == []
+        assert data["confidence"] == 0.0
+        assert data["insufficient_evidence"] is True
 
     def test_ask_missing_question_returns_422(self) -> None:
         """Missing 'question' field in request body."""

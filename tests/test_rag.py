@@ -11,7 +11,12 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from neo4j_graphrag_kg.rag.answer import RAGResponse, _format_results, generate_answer
+from neo4j_graphrag_kg.rag.answer import (
+    RAGResponse,
+    _format_results,
+    build_response_metadata,
+    generate_answer,
+)
 from neo4j_graphrag_kg.rag.pipeline import ask
 from neo4j_graphrag_kg.rag.text2cypher import (
     _strip_cypher,
@@ -104,6 +109,9 @@ class TestRAGResponse:
         assert r.results == []
         assert r.answer == ""
         assert r.elapsed_s == 0.0
+        assert r.citations == []
+        assert r.confidence == 0.0
+        assert r.insufficient_evidence is False
 
     def test_full_fields(self) -> None:
         r = RAGResponse(
@@ -112,10 +120,21 @@ class TestRAGResponse:
             results=[{"name": "A"}],
             answer="A is the answer",
             elapsed_s=1.23,
+            citations=[{
+                "row": 1,
+                "fields": ["name"],
+                "preview": "name=A",
+                "data": {"name": "A"},
+            }],
+            confidence=0.72,
+            insufficient_evidence=False,
         )
         assert r.question == "What?"
         assert len(r.results) == 1
         assert r.elapsed_s == 1.23
+        assert r.citations[0]["preview"] == "name=A"
+        assert r.confidence == 0.72
+        assert r.insufficient_evidence is False
 
 
 # ====================================================================
@@ -271,6 +290,26 @@ class TestGenerateAnswer:
         assert "No results" in answer
 
 
+class TestResponseMetadata:
+    """Trust metadata should reflect available query evidence."""
+
+    def test_empty_results_are_insufficient(self) -> None:
+        citations, confidence, insufficient = build_response_metadata([])
+        assert citations == []
+        assert confidence == 0.0
+        assert insufficient is True
+
+    def test_structured_rows_produce_citations_and_confidence(self) -> None:
+        citations, confidence, insufficient = build_response_metadata(
+            [{"name": "Alice", "type": "Person"}, {"name": "Bob", "type": "Person"}]
+        )
+        assert len(citations) == 2
+        assert citations[0]["row"] == 1
+        assert "Alice" in citations[0]["preview"]
+        assert 0.0 < confidence <= 1.0
+        assert insufficient is False
+
+
 # ====================================================================
 # Pipeline — ask() with mocked internals
 # ====================================================================
@@ -289,7 +328,7 @@ class TestPipelineAsk:
         mock_answer: MagicMock,
     ) -> None:
         mock_t2c.return_value = "MATCH (n:Entity) RETURN n.name"
-        mock_exec.return_value = [{"n.name": "Alice"}]
+        mock_exec.return_value = [{"name": "Alice", "type": "Entity"}]
         mock_answer.return_value = "Alice is an entity."
         driver = MagicMock()
 
@@ -302,9 +341,13 @@ class TestPipelineAsk:
         assert isinstance(resp, RAGResponse)
         assert resp.question == "Who is Alice?"
         assert "MATCH" in resp.cypher
-        assert resp.results == [{"n.name": "Alice"}]
+        assert resp.results == [{"name": "Alice", "type": "Entity"}]
         assert resp.answer == "Alice is an entity."
         assert resp.elapsed_s >= 0
+        assert resp.citations[0]["row"] == 1
+        assert "Alice" in resp.citations[0]["preview"]
+        assert resp.confidence > 0.0
+        assert resp.insufficient_evidence is False
 
     @patch("neo4j_graphrag_kg.rag.pipeline.text_to_cypher")
     def test_cypher_only_mode(self, mock_t2c: MagicMock) -> None:
@@ -321,6 +364,9 @@ class TestPipelineAsk:
         assert resp.cypher == "MATCH (n) RETURN n LIMIT 100"
         assert resp.results == []
         assert resp.answer == ""
+        assert resp.citations == []
+        assert resp.confidence == 0.0
+        assert resp.insufficient_evidence is True
 
     @patch("neo4j_graphrag_kg.rag.pipeline.generate_answer")
     @patch("neo4j_graphrag_kg.rag.pipeline._execute_cypher")
@@ -350,6 +396,9 @@ class TestPipelineAsk:
             api_key="test-key",
         )
         assert resp.answer == "Got it."
+        assert resp.citations[0]["row"] == 1
+        assert resp.confidence > 0.0
+        assert resp.insufficient_evidence is True
         assert mock_t2c.call_count == 2
         assert mock_exec.call_count == 2
 
@@ -376,6 +425,9 @@ class TestPipelineAsk:
         )
         assert "unable to query" in resp.answer.lower()
         assert resp.results == []
+        assert resp.citations == []
+        assert resp.confidence == 0.0
+        assert resp.insufficient_evidence is True
 
 
 # ====================================================================

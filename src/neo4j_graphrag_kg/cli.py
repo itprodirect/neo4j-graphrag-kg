@@ -443,7 +443,21 @@ def ask(
         else:
             typer.echo(f"\n{response.answer}\n")
             typer.echo(f"--- Cypher: {response.cypher}")
-            typer.echo(f"--- Rows: {len(response.results)}  Time: {response.elapsed_s}s")
+            typer.echo(
+                "--- Rows: "
+                f"{len(response.results)}  Time: {response.elapsed_s}s  "
+                f"Confidence: {response.confidence:.2f}"
+            )
+            evidence_status = (
+                "insufficient evidence"
+                if response.insufficient_evidence
+                else "grounded in query results"
+            )
+            typer.echo(f"--- Evidence: {evidence_status}")
+            if response.citations:
+                typer.echo("--- Citations:")
+                for citation in response.citations:
+                    typer.echo(f"  [{citation['row']}] {citation['preview']}")
     except Exception as exc:
         typer.echo(f"RAG query failed: {exc}", err=True)
         raise typer.Exit(code=1)

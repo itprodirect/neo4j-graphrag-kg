@@ -15,7 +15,11 @@ from typing import Any
 import neo4j as _neo4j
 from neo4j import Driver
 
-from neo4j_graphrag_kg.rag.answer import RAGResponse, generate_answer
+from neo4j_graphrag_kg.rag.answer import (
+    RAGResponse,
+    build_response_metadata,
+    generate_answer,
+)
 from neo4j_graphrag_kg.rag.text2cypher import text_to_cypher, validate_cypher_readonly
 
 logger = logging.getLogger(__name__)
@@ -91,7 +95,8 @@ def ask(
 
     Returns
     -------
-    RAGResponse with question, cypher, results, answer, elapsed_s.
+    RAGResponse with question, cypher, results, answer, elapsed_s, and
+    trust metadata derived from the executed query results.
     """
     t0 = time.perf_counter()
 
@@ -121,6 +126,8 @@ def ask(
             results=[],
             answer=str(ve),
             elapsed_s=round(elapsed, 2),
+            confidence=0.0,
+            insufficient_evidence=True,
         )
 
     if cypher_only:
@@ -129,6 +136,8 @@ def ask(
             question=question,
             cypher=cypher,
             elapsed_s=round(elapsed, 2),
+            confidence=0.0,
+            insufficient_evidence=True,
         )
 
     # Step 2: Execute Cypher (with retry on failure)
@@ -171,7 +180,11 @@ def ask(
                     f"The generated Cypher query failed: {retry_exc}"
                 ),
                 elapsed_s=round(elapsed, 2),
+                confidence=0.0,
+                insufficient_evidence=True,
             )
+
+    citations, confidence, insufficient_evidence = build_response_metadata(results)
 
     # Step 3: Generate answer
     answer = generate_answer(
@@ -191,4 +204,7 @@ def ask(
         results=results,
         answer=answer,
         elapsed_s=round(elapsed, 2),
+        citations=citations,
+        confidence=confidence,
+        insufficient_evidence=insufficient_evidence,
     )

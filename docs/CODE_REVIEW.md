@@ -21,8 +21,8 @@ Priority gaps:
 
 - Relationship direction correctness in staged extraction writes.
 - Re-ingest reconciliation for changed source content.
-- Neo4j integration execution in CI.
-- Citation-rich RAG output contracts for trust and auditability.
+- Synchronous web execution path can bottleneck under load.
+- Re-ingest reconciliation and directionality remain the main correctness risks.
 
 ## Prior Findings Status
 
@@ -32,8 +32,9 @@ Priority gaps:
 | Transient Neo4j write retry missing | Open | Fixed |
 | `kg query` write-safety default | Open | Fixed (`--allow-write` escape hatch) |
 | Durable staged ingest job state | Planned | Implemented |
-| CI with Neo4j integration service | Open | Open |
+| CI with Neo4j integration service | Open | Fixed |
 | Strict `mypy` and `ruff` CI gate | Open | Fixed |
+| Structured RAG trust metadata | Open | Fixed |
 
 ## Strengths to Preserve
 
@@ -51,20 +52,19 @@ Priority gaps:
 
 ### P1
 
-1. Neo4j integration tests not consistently run in CI.
-2. Synchronous web path can bottleneck under load.
+1. Synchronous web path can bottleneck under load.
+2. Limited structured observability around throughput and retries.
 
 ### P2
 
-1. Limited structured observability around throughput/retries.
-2. RAG output lacks structured citation/confidence fields.
+1. Remaining ingest correctness work is still higher impact than new feature expansion.
+2. Web UX still surfaces trust metadata in a minimal way.
 
 ## Recommended Next Moves
 
-1. Execute phase 0 and phase 1 v2 backlog items.
-2. Land directionality + reconciliation work before broader feature expansion.
-3. Add Neo4j service-backed integration coverage in CI.
-4. Upgrade RAG contract to include evidence and insufficiency signaling.
+1. Land directionality + reconciliation work before broader feature expansion.
+2. Add setup and integrity diagnostics (`kg doctor`, `kg check`).
+3. Improve the web/UI presentation of trust metadata and evidence trails.
 
 ## Tracking Docs
 

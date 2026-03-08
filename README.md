@@ -9,16 +9,16 @@ Lean stack, explicit contracts, practical CLI. Fancy where useful, boring where 
 | Area | Status |
 |---|---|
 | Product stage | `v1 foundation stable`, `v2 plan approved` |
-| Test run | `195 passed, 13 skipped` (`pytest -q`) |
-| Recent work | Static-quality baseline, durable ingest jobs, synthetic investigation dataset |
-| Next focus | Phase 0/1 v2 correctness and Neo4j integration CI coverage |
+| Test run | `198 passed, 13 skipped` (`pytest -q`) |
+| Recent work | Static-quality baseline, Neo4j integration CI, trust-aware RAG responses |
+| Next focus | Phase 0/1 ingest correctness: relationship directionality and re-ingest reconciliation |
 
 ## What You Can Do Today
 
 - Ingest documents into a Neo4j knowledge graph.
 - Extract entities and relationships with either heuristic or LLM pipelines.
 - Run read-safe Cypher from CLI.
-- Ask natural-language questions through GraphRAG (`kg ask`).
+- Ask natural-language questions through GraphRAG (`kg ask`) with citations and confidence signals.
 - Explore graph structure in a web UI (`kg serve`).
 
 ## Quickstart
@@ -69,7 +69,7 @@ kg query --cypher "MATCH (e:Entity) RETURN e.name ORDER BY e.name LIMIT 25"
 | `kg ingest-status` | Inspect durable ingest job state |
 | `kg ingest-run` | Run queued ingest job by ID |
 | `kg query` | Execute Cypher (read-only validated by default) |
-| `kg ask` | Natural language question -> Cypher -> answer |
+| `kg ask` | Natural language question -> Cypher -> answer + trust metadata |
 | `kg serve` | Start web UI/API |
 | `kg reset` | Drop graph data (requires `--confirm`) |
 
@@ -121,9 +121,9 @@ Core modules live in `src/neo4j_graphrag_kg/`:
 
 ### Now
 
-1. Execute v2 phase 0 and phase 1 correctness items.
-2. Add Neo4j-backed integration coverage in CI.
-3. Upgrade RAG response contract with citations and confidence signals.
+1. Execute v2 phase 0 and phase 1 ingest correctness items.
+2. Improve onboarding diagnostics (`kg doctor`).
+3. Add integrity diagnostics (`kg check`).
 
 ### Next
 

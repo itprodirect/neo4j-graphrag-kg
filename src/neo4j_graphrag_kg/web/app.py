@@ -243,6 +243,9 @@ async def ask_endpoint(req: AskRequest) -> JSONResponse:
             "answer": response.answer,
             "row_count": len(response.results),
             "elapsed_s": response.elapsed_s,
+            "citations": response.citations,
+            "confidence": response.confidence,
+            "insufficient_evidence": response.insufficient_evidence,
         })
     except Exception as exc:
         logger.error("POST /api/ask failed: %s", exc)

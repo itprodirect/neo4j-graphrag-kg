@@ -11,6 +11,8 @@ Technical notes for maintainers and contributors.
 | Query safety defaults | Implemented |
 | v2 planning docs | Implemented (`docs/V2_*.md`) |
 | CI static quality gates | Implemented (`ruff`, `mypy`, `pytest`) |
+| Neo4j integration CI | Implemented |
+| RAG trust metadata | Implemented (`citations`, `confidence`, `insufficient_evidence`) |
 | v2 refactor execution | Planned |
 
 ## Core Flow
@@ -30,7 +32,7 @@ Text file -> chunk -> extract -> normalize IDs -> batched upsert -> Neo4j
 | `extractors/` | Pluggable extraction (`simple`, `llm`) |
 | `ingest.py` | Staged orchestration + durable job state |
 | `upsert.py` | Batched transactional writes + transient retry |
-| `rag/` | Text-to-Cypher, query execution, answer generation |
+| `rag/` | Text-to-Cypher, query execution, answer generation, trust metadata |
 | `web/app.py` | API + static graph UI |
 
 ## Invariants
@@ -57,8 +59,7 @@ Text file -> chunk -> extract -> normalize IDs -> batched upsert -> Neo4j
 
 1. Preserve relationship direction end-to-end in staged extraction writes.
 2. Reconcile stale graph artifacts when source documents change.
-3. Run Neo4j integration tests in CI services.
-4. Add citation-aware and confidence-aware RAG response contracts.
+3. Improve onboarding diagnostics for local setup and dependency issues.
 
 Backlog source: `docs/V2_GITHUB_ISSUES.md`.
 
