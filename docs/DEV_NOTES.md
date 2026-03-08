@@ -60,6 +60,7 @@ Text file -> chunk -> extract -> normalize IDs -> batched upsert -> Neo4j
 1. Preserve relationship direction end-to-end in staged extraction writes.
 2. Reconcile stale graph artifacts when source documents change.
 3. Improve onboarding diagnostics for local setup and dependency issues.
+4. Expand integrity diagnostics coverage beyond lightweight stale-artifact counters.
 
 Backlog source: `docs/V2_GITHUB_ISSUES.md`.
 

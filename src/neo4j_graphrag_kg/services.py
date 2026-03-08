@@ -3,13 +3,30 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Callable
+from typing import Any, Callable, TypedDict
 
 from neo4j import Driver
 
 from neo4j_graphrag_kg.config import Settings, get_settings
 from neo4j_graphrag_kg.ingest import IngestPipelineService
 from neo4j_graphrag_kg.neo4j_client import close_driver, get_driver
+
+
+class GraphDiagnosticsChecks(TypedDict):
+    """Named graph consistency counters."""
+
+    documents_without_chunks: int
+    orphan_chunks: int
+    related_edges_without_document: int
+    orphan_entities: int
+
+
+class GraphDiagnostics(TypedDict):
+    """Lightweight graph consistency summary."""
+
+    status: str
+    stale_total: int
+    checks: GraphDiagnosticsChecks
 
 
 class GraphService:
@@ -47,6 +64,52 @@ class GraphService:
                     break
                 deleted += int(count)
         return deleted
+
+    def diagnostics(self) -> GraphDiagnostics:
+        """Return lightweight graph consistency indicators."""
+        with self._driver.session(database=self._database) as session:
+            docs_without_chunks_row = session.run(
+                "MATCH (d:Document) WHERE NOT (d)-[:HAS_CHUNK]->(:Chunk) "
+                "RETURN count(d) AS c"
+            ).single()
+            orphan_chunks_row = session.run(
+                "MATCH (c:Chunk) WHERE NOT (:Document)-[:HAS_CHUNK]->(c) "
+                "RETURN count(c) AS c"
+            ).single()
+            related_without_doc_row = session.run(
+                "MATCH ()-[r:RELATED_TO]->() "
+                "WHERE r.doc_id IS NOT NULL "
+                "AND NOT EXISTS { MATCH (:Document {id: r.doc_id}) } "
+                "RETURN count(r) AS c"
+            ).single()
+            orphan_entities_row = session.run(
+                "MATCH (e:Entity) "
+                "WHERE NOT EXISTS { MATCH (:Chunk)-[:MENTIONS]->(e) } "
+                "AND NOT EXISTS { MATCH (e)-[:RELATED_TO]-() } "
+                "RETURN count(e) AS c"
+            ).single()
+
+        checks: GraphDiagnosticsChecks = {
+            "documents_without_chunks": (
+                int(docs_without_chunks_row["c"]) if docs_without_chunks_row else 0
+            ),
+            "orphan_chunks": int(orphan_chunks_row["c"]) if orphan_chunks_row else 0,
+            "related_edges_without_document": (
+                int(related_without_doc_row["c"]) if related_without_doc_row else 0
+            ),
+            "orphan_entities": int(orphan_entities_row["c"]) if orphan_entities_row else 0,
+        }
+        stale_total = (
+            checks["documents_without_chunks"]
+            + checks["orphan_chunks"]
+            + checks["related_edges_without_document"]
+            + checks["orphan_entities"]
+        )
+        return {
+            "status": "ok" if stale_total == 0 else "attention",
+            "stale_total": stale_total,
+            "checks": checks,
+        }
 
 
 @dataclass

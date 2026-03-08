@@ -317,38 +317,7 @@ async def diagnostics_endpoint() -> JSONResponse:
     """Return lightweight graph consistency indicators for stale-data visibility."""
     services = _get_services()
     try:
-        with services.graph.session() as session:
-            docs_without_chunks_row = session.run(
-                "MATCH (d:Document) WHERE NOT (d)-[:HAS_CHUNK]->(:Chunk) "
-                "RETURN count(d) AS c"
-            ).single()
-            orphan_chunks_row = session.run(
-                "MATCH (c:Chunk) WHERE NOT (:Document)-[:HAS_CHUNK]->(c) "
-                "RETURN count(c) AS c"
-            ).single()
-            related_without_doc_row = session.run(
-                "MATCH ()-[r:RELATED_TO]->() "
-                "WHERE r.doc_id IS NOT NULL "
-                "AND NOT EXISTS { MATCH (:Document {id: r.doc_id}) } "
-                "RETURN count(r) AS c"
-            ).single()
-
-        docs_without_chunks = int(docs_without_chunks_row["c"]) if docs_without_chunks_row else 0
-        orphan_chunks = int(orphan_chunks_row["c"]) if orphan_chunks_row else 0
-        related_without_doc = int(related_without_doc_row["c"]) if related_without_doc_row else 0
-
-        stale_total = docs_without_chunks + orphan_chunks + related_without_doc
-        status = "ok" if stale_total == 0 else "attention"
-
-        return JSONResponse({
-            "status": status,
-            "stale_total": stale_total,
-            "checks": {
-                "documents_without_chunks": docs_without_chunks,
-                "orphan_chunks": orphan_chunks,
-                "related_edges_without_document": related_without_doc,
-            },
-        })
+        return JSONResponse(services.graph.diagnostics())
     except Exception as exc:
         logger.error("GET /api/diagnostics failed: %s", exc)
         raise HTTPException(status_code=500, detail="Could not load diagnostics")

@@ -67,3 +67,71 @@ def test_query_allow_write_bypasses_validation(
     mock_validate.assert_not_called()
     session.run.assert_called_once_with(raw_query)
     mock_close_driver.assert_called_once()
+
+
+@patch("neo4j_graphrag_kg.cli.close_driver")
+@patch("neo4j_graphrag_kg.cli.build_service_container")
+@patch("neo4j_graphrag_kg.cli.get_driver")
+@patch("neo4j_graphrag_kg.cli.get_settings")
+def test_check_graph_returns_zero_for_clean_graph(
+    mock_get_settings: MagicMock,
+    mock_get_driver: MagicMock,
+    mock_build_container: MagicMock,
+    mock_close_driver: MagicMock,
+) -> None:
+    mock_get_settings.return_value = MagicMock(neo4j_database="neo4j")
+    mock_get_driver.return_value = MagicMock()
+
+    graph = MagicMock()
+    graph.diagnostics.return_value = {
+        "status": "ok",
+        "stale_total": 0,
+        "checks": {
+            "documents_without_chunks": 0,
+            "orphan_chunks": 0,
+            "related_edges_without_document": 0,
+            "orphan_entities": 0,
+        },
+    }
+    mock_build_container.return_value = MagicMock(graph=graph)
+
+    result = runner.invoke(app, ["check"])
+
+    assert result.exit_code == 0
+    assert "Graph integrity: ok" in result.output
+    assert "orphan_entities=0" in result.output
+    mock_close_driver.assert_called_once()
+
+
+@patch("neo4j_graphrag_kg.cli.close_driver")
+@patch("neo4j_graphrag_kg.cli.build_service_container")
+@patch("neo4j_graphrag_kg.cli.get_driver")
+@patch("neo4j_graphrag_kg.cli.get_settings")
+def test_check_graph_returns_nonzero_for_stale_artifacts(
+    mock_get_settings: MagicMock,
+    mock_get_driver: MagicMock,
+    mock_build_container: MagicMock,
+    mock_close_driver: MagicMock,
+) -> None:
+    mock_get_settings.return_value = MagicMock(neo4j_database="neo4j")
+    mock_get_driver.return_value = MagicMock()
+
+    graph = MagicMock()
+    graph.diagnostics.return_value = {
+        "status": "attention",
+        "stale_total": 3,
+        "checks": {
+            "documents_without_chunks": 1,
+            "orphan_chunks": 0,
+            "related_edges_without_document": 0,
+            "orphan_entities": 2,
+        },
+    }
+    mock_build_container.return_value = MagicMock(graph=graph)
+
+    result = runner.invoke(app, ["check", "--json"])
+
+    assert result.exit_code == 1
+    assert '"status": "attention"' in result.output
+    assert '"orphan_entities": 2' in result.output
+    mock_close_driver.assert_called_once()

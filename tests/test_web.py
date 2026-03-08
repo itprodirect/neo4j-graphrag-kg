@@ -433,10 +433,12 @@ class TestDiagnosticsEndpoint:
         row_docs = {"c": 1}
         row_chunks = {"c": 2}
         row_related = {"c": 0}
+        row_entities = {"c": 4}
         session.run.side_effect = [
             MagicMock(single=MagicMock(return_value=row_docs)),
             MagicMock(single=MagicMock(return_value=row_chunks)),
             MagicMock(single=MagicMock(return_value=row_related)),
+            MagicMock(single=MagicMock(return_value=row_entities)),
         ]
 
         mock_get_driver.return_value = driver
@@ -445,9 +447,10 @@ class TestDiagnosticsEndpoint:
         assert resp.status_code == 200
         payload = resp.json()
         assert payload["status"] == "attention"
-        assert payload["stale_total"] == 3
+        assert payload["stale_total"] == 7
         assert payload["checks"]["documents_without_chunks"] == 1
         assert payload["checks"]["orphan_chunks"] == 2
+        assert payload["checks"]["orphan_entities"] == 4
 
 
 # ====================================================================

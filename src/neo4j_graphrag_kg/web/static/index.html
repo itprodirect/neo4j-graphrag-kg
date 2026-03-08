@@ -475,7 +475,8 @@
       const checks = data.checks || {};
       healthChecks.textContent =
         `stale=${staleTotal} | docs_without_chunks=${checks.documents_without_chunks || 0} | ` +
-        `orphan_chunks=${checks.orphan_chunks || 0} | related_without_doc=${checks.related_edges_without_document || 0}`;
+        `orphan_chunks=${checks.orphan_chunks || 0} | related_without_doc=${checks.related_edges_without_document || 0} | ` +
+        `orphan_entities=${checks.orphan_entities || 0}`;
 
       if (status === 'ok') {
         setTroubleshootMessage([

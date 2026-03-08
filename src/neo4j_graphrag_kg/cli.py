@@ -145,6 +145,45 @@ def status() -> None:
         close_driver()
 
 
+@app.command("check")
+def check_graph(
+    json_output: bool = typer.Option(
+        False,
+        "--json",
+        help="Print integrity diagnostics as JSON.",
+    ),
+) -> None:
+    """Run graph integrity diagnostics and fail if stale artifacts are found."""
+    settings = get_settings()
+    driver = get_driver(settings)
+    services = build_service_container(settings, driver=driver)
+    try:
+        diagnostics = services.graph.diagnostics()
+        if json_output:
+            typer.echo(json.dumps(diagnostics, indent=2))
+        else:
+            typer.echo(f"Graph integrity: {diagnostics['status']}")
+            typer.echo(f"Stale artifacts: {diagnostics['stale_total']}")
+            checks = diagnostics["checks"]
+            typer.echo(
+                "Checks: "
+                f"docs_without_chunks={checks['documents_without_chunks']}  "
+                f"orphan_chunks={checks['orphan_chunks']}  "
+                f"related_without_doc={checks['related_edges_without_document']}  "
+                f"orphan_entities={checks['orphan_entities']}"
+            )
+
+        if diagnostics["status"] != "ok":
+            raise typer.Exit(code=1)
+    except typer.Exit:
+        raise
+    except Exception as exc:
+        typer.echo(f"Integrity check failed: {exc}", err=True)
+        raise typer.Exit(code=1)
+    finally:
+        close_driver()
+
+
 @app.command()
 def ingest(
     input: Path = typer.Option(..., "--input", help="Path to a UTF-8 text file"),
