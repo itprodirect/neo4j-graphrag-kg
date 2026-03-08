@@ -9,8 +9,7 @@ from __future__ import annotations
 
 import json
 from itertools import combinations
-from typing import Any
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -23,10 +22,8 @@ from neo4j_graphrag_kg.extractors.base import (
 from neo4j_graphrag_kg.extractors.llm import LLMExtractor
 from neo4j_graphrag_kg.extractors.simple import (
     SimpleExtractor,
-    extract_entities_from_chunk,
 )
 from neo4j_graphrag_kg.ids import edge_id, slugify
-
 
 # ====================================================================
 # Fix 1 — Persist relationship type end-to-end
@@ -299,11 +296,13 @@ class TestTypedRelationshipsIntegration:
 
     def test_typed_edges_in_neo4j(self) -> None:
         """Ingest with a mock extractor returning typed rels, then query."""
-        from pathlib import Path
         import tempfile
+        from pathlib import Path
+
+        from neo4j import GraphDatabase
+
         from neo4j_graphrag_kg.config import get_settings
         from neo4j_graphrag_kg.ingest import ingest_file
-        from neo4j import GraphDatabase
 
         settings = get_settings()
         driver = GraphDatabase.driver(

@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
+import threading
+import time
 from copy import deepcopy
 from pathlib import Path
 from typing import Any
-import threading
-import time
 from unittest.mock import MagicMock
 
 import pytest
@@ -122,6 +122,9 @@ def test_ingest_job_completes_and_persists_summary(
     assert job["stage"] == "completed"
     assert isinstance(job["summary"], dict)
     assert job["summary"]["doc_id"] == "doc-1"
+    assert job["summary"]["replace_mode"] == "atomic"
+    assert job["summary"]["purged"] == {"chunks": 0, "related_edges": 0}
+    assert job["summary"]["written"]["chunks"] == 1
 
 
 def test_ingest_job_retries_failed_stage_then_completes(
@@ -204,7 +207,9 @@ def test_run_job_serializes_concurrent_calls_for_same_doc_id(
         with call_lock:
             calls["graph"] += 1
         time.sleep(0.2)
-        return {"written": {"chunks": 1, "entities": 1, "mentions": 1, "edges": 0}}
+        return {
+            "written": {"chunks": 1, "entities": 1, "mentions": 1, "edges": 0}
+        }
 
     monkeypatch.setattr(ingest_mod, "_stage_graph_write", _slow_graph_write)
 
@@ -262,11 +267,16 @@ def test_ingest_job_retries_graph_write_without_reparsing(
         counts["extract"] += 1
         return original_extract(job, state, extractor)  # type: ignore[arg-type]
 
-    def _flaky_graph_write(_job: dict[str, object], _state: dict[str, object]) -> dict[str, object]:
+    def _flaky_graph_write(
+        _job: dict[str, object],
+        _state: dict[str, object],
+    ) -> dict[str, object]:
         counts["graph"] += 1
         if counts["graph"] == 1:
             raise RuntimeError("graph write transient failure")
-        return {"written": {"chunks": 1, "entities": 1, "mentions": 1, "edges": 0}}
+        return {
+            "written": {"chunks": 1, "entities": 1, "mentions": 1, "edges": 0}
+        }
 
     monkeypatch.setattr(service, "_run_parse_stage", _tracked_parse)
     monkeypatch.setattr(service, "_run_extraction_stage", _tracked_extract)

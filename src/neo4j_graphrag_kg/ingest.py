@@ -204,9 +204,9 @@ def _stage_extract(
     seen_mentions: set[tuple[str, str]] = set()
     deduped_mentions: list[dict[str, str]] = []
     for mention in all_mentions:
-        key = (mention["chunk_id"], mention["entity_id"])
-        if key not in seen_mentions:
-            seen_mentions.add(key)
+        mention_key = (mention["chunk_id"], mention["entity_id"])
+        if mention_key not in seen_mentions:
+            seen_mentions.add(mention_key)
             deduped_mentions.append(mention)
 
     logger.info("Extracted %d unique entities via extractor", len(entity_rows))
@@ -274,7 +274,31 @@ def _build_summary(
     mention_rows: list[dict[str, Any]],
     relationship_rows: list[dict[str, Any]],
     elapsed_s: float,
+    graph_write_result: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    raw_result = graph_write_result if isinstance(graph_write_result, dict) else {}
+    raw_mode = raw_result.get("replace_mode")
+    replace_mode = (
+        _normalize_replace_mode(raw_mode)
+        if isinstance(raw_mode, str) and raw_mode.strip()
+        else REPLACE_MODE_ATOMIC
+    )
+    raw_purged = raw_result.get("purged")
+    purged_source = raw_purged if isinstance(raw_purged, dict) else {}
+    raw_written = raw_result.get("written")
+    written_source = raw_written if isinstance(raw_written, dict) else {}
+
+    purged = {
+        "chunks": int(purged_source.get("chunks", 0) or 0),
+        "related_edges": int(purged_source.get("related_edges", 0) or 0),
+    }
+    written = {
+        "chunks": int(written_source.get("chunks", len(chunk_rows)) or 0),
+        "entities": int(written_source.get("entities", len(entity_rows)) or 0),
+        "mentions": int(written_source.get("mentions", len(mention_rows)) or 0),
+        "edges": int(written_source.get("edges", len(relationship_rows)) or 0),
+    }
+
     return {
         "doc_id": doc_id,
         "chars": chars,
@@ -282,6 +306,9 @@ def _build_summary(
         "entities": len(entity_rows),
         "mentions": len(mention_rows),
         "edges": len(relationship_rows),
+        "replace_mode": replace_mode,
+        "purged": purged,
+        "written": written,
         "elapsed_s": round(elapsed_s, 2),
     }
 
@@ -342,7 +369,7 @@ class Neo4jIngestJobStore:
         now = _utc_now_iso()
         doc_slug = slugify(spec.doc_id) or spec.doc_id
         job_id = f"ingest::{doc_slug}"
-        job = {
+        job: dict[str, Any] = {
             "id": job_id,
             "created_at": now,
             "updated_at": now,
@@ -440,7 +467,9 @@ class Neo4jIngestJobStore:
         summary_json = job.get("summary_json")
         job["state"] = _json_loads(state_json if isinstance(state_json, str) else "", {})
         job["summary"] = _json_loads(summary_json if isinstance(summary_json, str) else "", {})
-        job["replace_mode"] = _normalize_replace_mode(str(job.get("replace_mode", REPLACE_MODE_ATOMIC)))
+        job["replace_mode"] = _normalize_replace_mode(
+            str(job.get("replace_mode", REPLACE_MODE_ATOMIC))
+        )
         return job
 
     def _save_job(self, job: dict[str, Any]) -> None:
@@ -457,7 +486,9 @@ class Neo4jIngestJobStore:
             "chunk_size": int(job.get("chunk_size", 1000)),
             "chunk_overlap": int(job.get("chunk_overlap", 150)),
             "extractor_name": str(job.get("extractor_name", "simple")),
-            "replace_mode": _normalize_replace_mode(str(job.get("replace_mode", REPLACE_MODE_ATOMIC))),
+            "replace_mode": _normalize_replace_mode(
+                str(job.get("replace_mode", REPLACE_MODE_ATOMIC))
+            ),
             "status": str(job.get("status", "queued")),
             "stage": str(job.get("stage", "queued")),
             "stage_index": int(job.get("stage_index", 0)),
@@ -753,6 +784,11 @@ class IngestPipelineService:
             mention_rows=mention_rows,
             relationship_rows=relationship_rows,
             elapsed_s=elapsed,
+            graph_write_result={
+                "replace_mode": state.get("replace_mode"),
+                "purged": state.get("purged"),
+                "written": state.get("written"),
+            },
         )
         return {"summary": summary}
 
@@ -796,7 +832,7 @@ def ingest_file(
         row for row in extract_state["relationship_rows"] if isinstance(row, dict)
     ]
 
-    _stage_graph_write(
+    graph_write_result = _stage_graph_write(
         driver,
         database,
         doc_id=doc_id,
@@ -819,6 +855,7 @@ def ingest_file(
         mention_rows=mention_rows,
         relationship_rows=relationship_rows,
         elapsed_s=time.perf_counter() - t0,
+        graph_write_result=graph_write_result,
     )
     logger.info("Ingestion complete: %s", summary)
     return summary

@@ -16,11 +16,15 @@ def test_ingest_summary_chars_uses_full_file_length(
     input_path = tmp_path / "doc.txt"
     input_path.write_text(content, encoding="utf-8")
 
-    monkeypatch.setattr(ingest_mod, "upsert_document", lambda *a, **k: None)
-    monkeypatch.setattr(ingest_mod, "upsert_chunks", lambda *a, **k: 0)
-    monkeypatch.setattr(ingest_mod, "upsert_entities", lambda *a, **k: 0)
-    monkeypatch.setattr(ingest_mod, "upsert_mentions", lambda *a, **k: 0)
-    monkeypatch.setattr(ingest_mod, "upsert_related", lambda *a, **k: 0)
+    monkeypatch.setattr(
+        ingest_mod,
+        "replace_document_subgraph_atomic",
+        lambda *a, **k: {
+            "replace_mode": "atomic",
+            "purged": {"chunks": 0, "related_edges": 0},
+            "written": {"chunks": 1, "entities": 1, "mentions": 1, "edges": 0},
+        },
+    )
 
     summary = ingest_mod.ingest_file(
         MagicMock(),
@@ -31,3 +35,7 @@ def test_ingest_summary_chars_uses_full_file_length(
     )
 
     assert summary["chars"] == len(content)
+    assert summary["replace_mode"] == "atomic"
+    assert summary["purged"] == {"chunks": 0, "related_edges": 0}
+    assert summary["written"]["chunks"] == 1
+    assert summary["written"]["mentions"] >= 0

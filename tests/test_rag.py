@@ -12,13 +12,12 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from neo4j_graphrag_kg.rag.answer import RAGResponse, _format_results, generate_answer
+from neo4j_graphrag_kg.rag.pipeline import ask
 from neo4j_graphrag_kg.rag.text2cypher import (
     _strip_cypher,
     get_graph_schema,
     text_to_cypher,
 )
-from neo4j_graphrag_kg.rag.pipeline import ask
-
 
 # ====================================================================
 # _strip_cypher — fence / preamble stripping
@@ -141,9 +140,6 @@ class TestTextToCypher:
                 Exception("Procedure not found"),
             ]
             # Re-mock for fallback path — use a fresh session for second attempt
-            mock_labels = [MagicMock(**{"__getitem__": lambda s, k: "Entity"})]
-            mock_rels = [MagicMock(**{"__getitem__": lambda s, k: "RELATED_TO"})]
-            mock_props = [MagicMock(**{"__getitem__": lambda s, k: "name"})]
 
         return driver
 

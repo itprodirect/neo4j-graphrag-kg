@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from neo4j_graphrag_kg.extractor import (
-    ExtractedEntity,
     build_edges,
     extract_entities,
     extract_entities_from_chunk,

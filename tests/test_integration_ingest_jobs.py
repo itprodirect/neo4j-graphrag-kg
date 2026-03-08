@@ -101,6 +101,9 @@ def test_cli_queue_run_and_status_cycle(tmp_path: Path) -> None:
     assert payload_after["stage"] == "completed"
     assert isinstance(payload_after["summary"], dict)
     assert payload_after["summary"]["doc_id"] == doc_id
+    assert payload_after["summary"]["replace_mode"] == "atomic"
+    assert "purged" in payload_after["summary"]
+    assert "written" in payload_after["summary"]
 
     doc_count = _single_value(
         "MATCH (d:Document {id: $doc_id}) RETURN count(d) AS c",

@@ -9,8 +9,7 @@ from __future__ import annotations
 import logging
 import time
 from datetime import datetime, timezone
-from typing import Callable
-from typing import Any
+from typing import Any, Callable
 
 from neo4j import Driver
 from neo4j.exceptions import ServiceUnavailable, SessionExpired, TransientError
@@ -52,6 +51,7 @@ def _execute_write_with_retry(
             )
             time.sleep(backoff)
 
+
 def _execute_write_with_retry_any(
     session: Any,
     callback: Callable[..., Any],
@@ -82,6 +82,7 @@ def _execute_write_with_retry_any(
 def _iter_batches(rows: list[dict[str, Any]], batch_size: int) -> list[list[dict[str, Any]]]:
     safe_batch = max(1, int(batch_size))
     return [rows[i : i + safe_batch] for i in range(0, len(rows), safe_batch)]
+
 
 def _run_batch(
     driver: Driver,

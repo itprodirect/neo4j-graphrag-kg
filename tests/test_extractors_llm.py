@@ -7,8 +7,7 @@ and entity type constraint pass-through.
 from __future__ import annotations
 
 import json
-from typing import Any
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -17,7 +16,6 @@ from neo4j_graphrag_kg.extractors.llm import (
     _parse_json_response,
     _safe_float,
 )
-
 
 # ---------------------------------------------------------------------------
 # JSON parsing tests
@@ -30,7 +28,11 @@ class TestParseJsonResponse:
         assert result == {"entities": [], "relationships": []}
 
     def test_markdown_fenced_json(self) -> None:
-        raw = '```json\n{"entities": [{"name": "Neo4j", "type": "Technology"}], "relationships": []}\n```'
+        raw = (
+            '```json\n'
+            '{"entities": [{"name": "Neo4j", "type": "Technology"}], '
+            '"relationships": []}\n```'
+        )
         result = _parse_json_response(raw)
         assert len(result["entities"]) == 1
         assert result["entities"][0]["name"] == "Neo4j"

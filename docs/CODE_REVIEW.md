@@ -4,7 +4,7 @@ Current-state review for maintainers.
 
 ## Review Date
 
-- 2026-03-04
+- 2026-03-08
 
 ## Executive Summary
 
@@ -21,7 +21,7 @@ Priority gaps:
 
 - Relationship direction correctness in staged extraction writes.
 - Re-ingest reconciliation for changed source content.
-- CI enforcement for lint/type/integration quality gates.
+- Neo4j integration execution in CI.
 - Citation-rich RAG output contracts for trust and auditability.
 
 ## Prior Findings Status
@@ -33,7 +33,7 @@ Priority gaps:
 | `kg query` write-safety default | Open | Fixed (`--allow-write` escape hatch) |
 | Durable staged ingest job state | Planned | Implemented |
 | CI with Neo4j integration service | Open | Open |
-| Strict `mypy` and `ruff` CI gate | Open | Open |
+| Strict `mypy` and `ruff` CI gate | Open | Fixed |
 
 ## Strengths to Preserve
 
@@ -51,9 +51,8 @@ Priority gaps:
 
 ### P1
 
-1. Missing hard CI gate for lint and type checks.
-2. Neo4j integration tests not consistently run in CI.
-3. Synchronous web path can bottleneck under load.
+1. Neo4j integration tests not consistently run in CI.
+2. Synchronous web path can bottleneck under load.
 
 ### P2
 
@@ -64,7 +63,7 @@ Priority gaps:
 
 1. Execute phase 0 and phase 1 v2 backlog items.
 2. Land directionality + reconciliation work before broader feature expansion.
-3. Add CI gates for `ruff`, `mypy`, and Neo4j integration workflow.
+3. Add Neo4j service-backed integration coverage in CI.
 4. Upgrade RAG contract to include evidence and insufficiency signaling.
 
 ## Tracking Docs

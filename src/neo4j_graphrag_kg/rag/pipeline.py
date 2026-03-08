@@ -12,9 +12,8 @@ import logging
 import time
 from typing import Any
 
-from neo4j import Driver
-
 import neo4j as _neo4j
+from neo4j import Driver
 
 from neo4j_graphrag_kg.rag.answer import RAGResponse, generate_answer
 from neo4j_graphrag_kg.rag.text2cypher import text_to_cypher, validate_cypher_readonly

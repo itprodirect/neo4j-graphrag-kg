@@ -19,9 +19,11 @@ from itertools import combinations
 
 from neo4j_graphrag_kg.extractors.base import (
     BaseExtractor,
-    ExtractedEntity as BaseEntity,
     ExtractedRelationship,
     ExtractionResult,
+)
+from neo4j_graphrag_kg.extractors.base import (
+    ExtractedEntity as BaseEntity,
 )
 from neo4j_graphrag_kg.ids import slugify
 

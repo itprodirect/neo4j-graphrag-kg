@@ -11,9 +11,9 @@ from unittest.mock import MagicMock, patch
 import pytest
 from fastapi.testclient import TestClient
 
-from neo4j_graphrag_kg.rag.text2cypher import validate_cypher_readonly
-from neo4j_graphrag_kg.rag.pipeline import ask
 from neo4j_graphrag_kg.rag.answer import RAGResponse
+from neo4j_graphrag_kg.rag.pipeline import ask
+from neo4j_graphrag_kg.rag.text2cypher import validate_cypher_readonly
 from neo4j_graphrag_kg.web.app import app
 
 client = TestClient(app)

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import atexit
 
-from neo4j import GraphDatabase, Driver
+from neo4j import Driver, GraphDatabase
 
 from neo4j_graphrag_kg.config import Settings, get_settings
 

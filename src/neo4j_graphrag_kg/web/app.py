@@ -85,7 +85,7 @@ def _rel_to_dict(rel: Any) -> dict[str, Any]:
     }
 
 
-def _graph_query(cypher: str, params: dict | None = None) -> dict[str, Any]:
+def _graph_query(cypher: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
     """Execute a Cypher query and return {nodes: [...], edges: [...]}."""
     graph = _get_graph_service()
     nodes_map: dict[str, dict[str, Any]] = {}

@@ -11,9 +11,11 @@ from __future__ import annotations
 import logging
 import time
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Callable
 
 logger = logging.getLogger(__name__)
+
+ProviderCall = Callable[[str, str, str, str], str]
 
 
 # ---------------------------------------------------------------------------
@@ -60,7 +62,7 @@ Based on these results, answer the question concisely."""
 
 def _call_anthropic(api_key: str, model: str, system: str, user: str) -> str:
     try:
-        import anthropic
+        import anthropic  # type: ignore[import-not-found]
     except ImportError:
         raise ImportError(
             "The 'anthropic' package is required for RAG answers. "
@@ -96,10 +98,11 @@ def _call_openai(api_key: str, model: str, system: str, user: str) -> str:
             {"role": "user", "content": user},
         ],
     )
-    return response.choices[0].message.content or ""
+    content = response.choices[0].message.content
+    return content if isinstance(content, str) else ""
 
 
-_PROVIDERS: dict[str, Any] = {
+_PROVIDERS: dict[str, ProviderCall] = {
     "anthropic": _call_anthropic,
     "openai": _call_openai,
 }
@@ -151,7 +154,7 @@ def generate_answer(
     resolved_model = model or (
         "claude-sonnet-4-20250514" if provider == "anthropic" else "gpt-4o"
     )
-    call_fn = _PROVIDERS[provider]
+    call_fn: ProviderCall = _PROVIDERS[provider]
 
     formatted_results = _format_results(results)
     user = _USER_PROMPT.format(

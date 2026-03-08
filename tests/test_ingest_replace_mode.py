@@ -11,6 +11,12 @@ import neo4j_graphrag_kg.ingest as ingest_mod
 
 def test_stage_graph_write_defaults_to_atomic(monkeypatch: pytest.MonkeyPatch) -> None:
     calls = {"atomic": 0}
+    chunk_row = {
+        "id": "doc-atomic::chunk::0",
+        "document_id": "doc-atomic",
+        "idx": 0,
+        "text": "x",
+    }
 
     def _atomic(*_args: object, **_kwargs: object) -> dict[str, object]:
         calls["atomic"] += 1
@@ -32,7 +38,7 @@ def test_stage_graph_write_defaults_to_atomic(monkeypatch: pytest.MonkeyPatch) -
         doc_id="doc-atomic",
         title="Atomic",
         source="",
-        chunk_rows=[{"id": "doc-atomic::chunk::0", "document_id": "doc-atomic", "idx": 0, "text": "x"}],
+        chunk_rows=[chunk_row],
         entity_rows=[{"id": "x", "name": "X", "type": "Term"}],
         mention_rows=[{"chunk_id": "doc-atomic::chunk::0", "entity_id": "x"}],
         relationship_rows=[],
@@ -53,22 +59,36 @@ def test_stage_graph_write_non_atomic_mode_uses_legacy_path(
         "mentions": 0,
         "related": 0,
     }
+    chunk_row = {
+        "id": "doc-legacy::chunk::0",
+        "document_id": "doc-legacy",
+        "idx": 0,
+        "text": "x",
+    }
 
     def _atomic_should_not_run(*_args: object, **_kwargs: object) -> dict[str, object]:
         raise AssertionError("atomic path should not be used in non_atomic mode")
 
-    monkeypatch.setattr(ingest_mod, "replace_document_subgraph_atomic", _atomic_should_not_run)
+    monkeypatch.setattr(
+        ingest_mod, "replace_document_subgraph_atomic", _atomic_should_not_run
+    )
 
     def _purge(*_args: object, **_kwargs: object) -> dict[str, int]:
         calls["purge"] += 1
         return {"chunks": 2, "related_edges": 3}
 
+    def _bump(key: str) -> None:
+        calls[key] += 1
+
+    def _bump_fn(key: str):
+        return lambda *_a, **_k: _bump(key)
+
     monkeypatch.setattr(ingest_mod, "purge_document_subgraph", _purge)
-    monkeypatch.setattr(ingest_mod, "upsert_document", lambda *_a, **_k: calls.__setitem__("doc", calls["doc"] + 1))
-    monkeypatch.setattr(ingest_mod, "upsert_chunks", lambda *_a, **_k: calls.__setitem__("chunks", calls["chunks"] + 1))
-    monkeypatch.setattr(ingest_mod, "upsert_entities", lambda *_a, **_k: calls.__setitem__("entities", calls["entities"] + 1))
-    monkeypatch.setattr(ingest_mod, "upsert_mentions", lambda *_a, **_k: calls.__setitem__("mentions", calls["mentions"] + 1))
-    monkeypatch.setattr(ingest_mod, "upsert_related", lambda *_a, **_k: calls.__setitem__("related", calls["related"] + 1))
+    monkeypatch.setattr(ingest_mod, "upsert_document", _bump_fn("doc"))
+    monkeypatch.setattr(ingest_mod, "upsert_chunks", _bump_fn("chunks"))
+    monkeypatch.setattr(ingest_mod, "upsert_entities", _bump_fn("entities"))
+    monkeypatch.setattr(ingest_mod, "upsert_mentions", _bump_fn("mentions"))
+    monkeypatch.setattr(ingest_mod, "upsert_related", _bump_fn("related"))
 
     result = ingest_mod._stage_graph_write(
         MagicMock(),
@@ -76,7 +96,7 @@ def test_stage_graph_write_non_atomic_mode_uses_legacy_path(
         doc_id="doc-legacy",
         title="Legacy",
         source="",
-        chunk_rows=[{"id": "doc-legacy::chunk::0", "document_id": "doc-legacy", "idx": 0, "text": "x"}],
+        chunk_rows=[chunk_row],
         entity_rows=[{"id": "x", "name": "X", "type": "Term"}],
         mention_rows=[{"chunk_id": "doc-legacy::chunk::0", "entity_id": "x"}],
         relationship_rows=[],

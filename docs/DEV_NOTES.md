@@ -2,7 +2,7 @@
 
 Technical notes for maintainers and contributors.
 
-## Snapshot (as of 2026-03-04)
+## Snapshot (as of 2026-03-08)
 
 | Topic | Status |
 |---|---|
@@ -10,6 +10,7 @@ Technical notes for maintainers and contributors.
 | Durable ingest jobs | Implemented |
 | Query safety defaults | Implemented |
 | v2 planning docs | Implemented (`docs/V2_*.md`) |
+| CI static quality gates | Implemented (`ruff`, `mypy`, `pytest`) |
 | v2 refactor execution | Planned |
 
 ## Core Flow
@@ -56,7 +57,7 @@ Text file -> chunk -> extract -> normalize IDs -> batched upsert -> Neo4j
 
 1. Preserve relationship direction end-to-end in staged extraction writes.
 2. Reconcile stale graph artifacts when source documents change.
-3. Enforce lint/type/integration quality gates in CI.
+3. Run Neo4j integration tests in CI services.
 4. Add citation-aware and confidence-aware RAG response contracts.
 
 Backlog source: `docs/V2_GITHUB_ISSUES.md`.

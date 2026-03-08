@@ -4,11 +4,11 @@
     Import from ``neo4j_graphrag_kg.extractors.simple`` instead.
 """
 
-from neo4j_graphrag_kg.extractors.simple import (  # noqa: F401
-    ExtractedEdge,
-    ExtractedEntity,
+from neo4j_graphrag_kg.extractors.simple import (
     KNOWN_TERMS,
     MIN_FREQUENCY,
+    ExtractedEdge,
+    ExtractedEntity,
     SimpleExtractor,
     build_edges,
     extract_entities,

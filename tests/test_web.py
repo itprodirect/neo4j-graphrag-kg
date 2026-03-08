@@ -9,7 +9,6 @@ from __future__ import annotations
 from typing import Any
 from unittest.mock import MagicMock, patch
 
-import pytest
 from fastapi.testclient import TestClient
 
 from neo4j_graphrag_kg.web.app import app

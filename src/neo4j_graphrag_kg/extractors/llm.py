@@ -12,7 +12,7 @@ import json
 import logging
 import re
 import time
-from typing import Any
+from typing import Any, Callable
 
 from neo4j_graphrag_kg.extractors.base import (
     BaseExtractor,
@@ -22,6 +22,8 @@ from neo4j_graphrag_kg.extractors.base import (
 )
 
 logger = logging.getLogger(__name__)
+
+ProviderCall = Callable[[str, str, str, str], str]
 
 # ---------------------------------------------------------------------------
 # Default schema constraints
@@ -120,7 +122,7 @@ def _call_anthropic(
 ) -> str:
     """Call the Anthropic Messages API. Returns the text response."""
     try:
-        import anthropic
+        import anthropic  # type: ignore[import-not-found]
     except ImportError:
         raise ImportError(
             "The 'anthropic' package is required for the LLM extractor with "
@@ -165,10 +167,11 @@ def _call_openai(
             {"role": "user", "content": user_prompt},
         ],
     )
-    return response.choices[0].message.content or ""
+    content = response.choices[0].message.content
+    return content if isinstance(content, str) else ""
 
 
-_PROVIDERS: dict[str, callable] = {
+_PROVIDERS: dict[str, ProviderCall] = {
     "anthropic": _call_anthropic,
     "openai": _call_openai,
 }
@@ -223,10 +226,16 @@ class LLMExtractor(BaseExtractor):
             "claude-sonnet-4-20250514" if provider == "anthropic" else "gpt-4o"
         )
         self._api_key = api_key
-        self._entity_types = DEFAULT_ENTITY_TYPES if entity_types is None else entity_types
-        self._relationship_types = DEFAULT_RELATIONSHIP_TYPES if relationship_types is None else relationship_types
+        self._entity_types = (
+            DEFAULT_ENTITY_TYPES if entity_types is None else entity_types
+        )
+        self._relationship_types = (
+            DEFAULT_RELATIONSHIP_TYPES
+            if relationship_types is None
+            else relationship_types
+        )
         self._max_retries = max_retries
-        self._call_fn = _PROVIDERS[provider]
+        self._call_fn: ProviderCall = _PROVIDERS[provider]
 
         # Log config (NEVER the key)
         logger.info(

@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-import pytest
 from unittest.mock import MagicMock
+
+import pytest
 from neo4j.exceptions import ServiceUnavailable, SessionExpired, TransientError
 
 import neo4j_graphrag_kg.upsert as upsert_mod

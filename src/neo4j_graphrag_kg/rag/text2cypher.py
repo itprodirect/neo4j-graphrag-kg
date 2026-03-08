@@ -11,11 +11,13 @@ from __future__ import annotations
 import logging
 import re
 import time
-from typing import Any
+from typing import Callable
 
 from neo4j import Driver
 
 logger = logging.getLogger(__name__)
+
+ProviderCall = Callable[[str, str, str, str], str]
 
 # ---------------------------------------------------------------------------
 # Schema introspection
@@ -110,16 +112,23 @@ Q: What entities are in the graph?
 MATCH (e:Entity) RETURN e.name, e.type ORDER BY e.name LIMIT 25
 
 Q: How are X and Y related?
-MATCH p=shortestPath((a:Entity)-[*..5]-(b:Entity)) WHERE a.name =~ '(?i).*X.*' AND b.name =~ '(?i).*Y.*' RETURN p
+MATCH p=shortestPath((a:Entity)-[*..5]-(b:Entity))
+WHERE a.name =~ '(?i).*X.*' AND b.name =~ '(?i).*Y.*'
+RETURN p
 
 Q: What documents mention entity X?
-MATCH (d:Document)-[:HAS_CHUNK]->(c:Chunk)-[:MENTIONS]->(e:Entity) WHERE e.name =~ '(?i).*X.*' RETURN DISTINCT d.title, d.id
+MATCH (d:Document)-[:HAS_CHUNK]->(c:Chunk)-[:MENTIONS]->(e:Entity)
+WHERE e.name =~ '(?i).*X.*'
+RETURN DISTINCT d.title, d.id
 
 Q: Show me all relationships for entity X
-MATCH (e:Entity)-[r]->(other) WHERE e.name =~ '(?i).*X.*' RETURN e.name, type(r), r.type, other.name LIMIT 50
+MATCH (e:Entity)-[r]->(other)
+WHERE e.name =~ '(?i).*X.*'
+RETURN e.name, type(r), r.type, other.name LIMIT 50
 
 Rules:
-- Generate READ-ONLY Cypher queries only. NEVER generate CREATE, MERGE, DELETE, SET, REMOVE, or DROP statements.
+- Generate READ-ONLY Cypher queries only.
+  NEVER generate CREATE, MERGE, DELETE, SET, REMOVE, or DROP statements.
 - Return ONLY the Cypher query, no explanation, no markdown fences.
 - Use case-insensitive regex matching (=~) for entity name lookups.
 - Always include a LIMIT clause to avoid huge result sets.
@@ -129,6 +138,16 @@ Rules:
 _USER_PROMPT = "Question: {question}"
 
 _FENCE_RE = re.compile(r"```(?:cypher)?\s*\n?(.*?)\n?\s*```", re.DOTALL)
+_CYPHER_STARTS = (
+    "MATCH",
+    "CALL",
+    "RETURN",
+    "WITH",
+    "OPTIONAL",
+    "CREATE",
+    "MERGE",
+    "UNWIND",
+)
 
 # ---------------------------------------------------------------------------
 # Read-only Cypher validation
@@ -196,7 +215,7 @@ def _strip_cypher(raw: str) -> str:
     # Find first line that looks like Cypher
     for line in text.split("\n"):
         line = line.strip()
-        if line.upper().startswith(("MATCH", "CALL", "RETURN", "WITH", "OPTIONAL", "CREATE", "MERGE", "UNWIND")):
+        if line.upper().startswith(_CYPHER_STARTS):
             # Take from this line to end
             idx = text.index(line)
             return text[idx:].strip()
@@ -209,7 +228,7 @@ def _strip_cypher(raw: str) -> str:
 
 def _call_anthropic(api_key: str, model: str, system: str, user: str) -> str:
     try:
-        import anthropic
+        import anthropic  # type: ignore[import-not-found]
     except ImportError:
         raise ImportError(
             "The 'anthropic' package is required for RAG queries with "
@@ -245,10 +264,11 @@ def _call_openai(api_key: str, model: str, system: str, user: str) -> str:
             {"role": "user", "content": user},
         ],
     )
-    return response.choices[0].message.content or ""
+    content = response.choices[0].message.content
+    return content if isinstance(content, str) else ""
 
 
-_PROVIDERS: dict[str, Any] = {
+_PROVIDERS: dict[str, ProviderCall] = {
     "anthropic": _call_anthropic,
     "openai": _call_openai,
 }

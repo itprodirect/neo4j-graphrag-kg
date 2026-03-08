@@ -4,14 +4,14 @@ Neo4j-first knowledge graph tooling for GraphRAG pipelines.
 
 Lean stack, explicit contracts, practical CLI. Fancy where useful, boring where it should be.
 
-## At a Glance (as of 2026-03-04)
+## At a Glance (as of 2026-03-08)
 
 | Area | Status |
 |---|---|
 | Product stage | `v1 foundation stable`, `v2 plan approved` |
-| Test run | `186 passed, 11 skipped` (`pytest -q`) |
-| Recent work | Durable ingest jobs, safer query defaults, synthetic investigation dataset |
-| Next focus | Phase 0/1 v2 correctness and CI quality gates |
+| Test run | `195 passed, 13 skipped` (`pytest -q`) |
+| Recent work | Static-quality baseline, durable ingest jobs, synthetic investigation dataset |
+| Next focus | Phase 0/1 v2 correctness and Neo4j integration CI coverage |
 
 ## What You Can Do Today
 
@@ -122,7 +122,7 @@ Core modules live in `src/neo4j_graphrag_kg/`:
 ### Now
 
 1. Execute v2 phase 0 and phase 1 correctness items.
-2. Enforce CI quality gates (`ruff`, `mypy`, Neo4j integration).
+2. Add Neo4j-backed integration coverage in CI.
 3. Upgrade RAG response contract with citations and confidence signals.
 
 ### Next

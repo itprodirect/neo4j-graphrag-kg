@@ -9,6 +9,7 @@ from pathlib import Path
 import typer
 
 from neo4j_graphrag_kg.config import Settings, get_settings
+from neo4j_graphrag_kg.extractors.base import BaseExtractor
 from neo4j_graphrag_kg.neo4j_client import close_driver, get_driver
 from neo4j_graphrag_kg.rag.text2cypher import validate_cypher_readonly
 from neo4j_graphrag_kg.schema import ALL_STATEMENTS
@@ -33,7 +34,7 @@ def _build_extractor(
     provider: str,
     model: str,
     entity_types: str,
-) -> tuple[str, object]:
+) -> tuple[str, BaseExtractor]:
     from neo4j_graphrag_kg.extractors import get_extractor
 
     ext_type = extractor_name or settings.extractor_type or "simple"

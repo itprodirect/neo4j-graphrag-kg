@@ -34,12 +34,13 @@ __all__ = [
 def _get_llm_class() -> type[BaseExtractor]:
     """Lazily import LLMExtractor to avoid requiring SDK at import time."""
     from neo4j_graphrag_kg.extractors.llm import LLMExtractor
+
     return LLMExtractor
 
 
 # Registry maps extractor name → callable that returns the class.
 # "simple" is always available; "llm" is lazy-loaded.
-EXTRACTORS: dict[str, type[BaseExtractor] | callable] = {
+EXTRACTORS: dict[str, type[BaseExtractor]] = {
     "simple": SimpleExtractor,
 }
 
@@ -69,4 +70,4 @@ def get_extractor(name: str, **kwargs: Any) -> BaseExtractor:
         raise ValueError(f"Unknown extractor {name!r}. Available: {available}")
 
     cls = EXTRACTORS[name]
-    return cls(**kwargs)  # type: ignore[operator]
+    return cls(**kwargs)
