@@ -377,3 +377,94 @@ class TestTypedRelationshipsIntegration:
             with driver.session(database=settings.neo4j_database) as session:
                 session.run("MATCH (n) DETACH DELETE n")
             driver.close()
+
+    def test_reverse_direction_edges_remain_distinct(self) -> None:
+        """Reverse-direction typed edges should persist as separate relationships."""
+        import tempfile
+        from pathlib import Path
+
+        from neo4j import GraphDatabase
+
+        from neo4j_graphrag_kg.config import get_settings
+        from neo4j_graphrag_kg.ingest import ingest_file
+        from neo4j_graphrag_kg.schema import ALL_STATEMENTS
+
+        settings = get_settings()
+        driver = GraphDatabase.driver(
+            settings.neo4j_uri,
+            auth=(settings.neo4j_user, settings.neo4j_password),
+        )
+
+        with driver.session(database=settings.neo4j_database) as session:
+            session.run("MATCH (n) DETACH DELETE n")
+            for stmt in ALL_STATEMENTS:
+                session.run(stmt)
+
+        class DirectionalExtractor(BaseExtractor):
+            def extract(self, text: str, chunk_id: str, doc_id: str) -> ExtractionResult:
+                return ExtractionResult(
+                    entities=[
+                        ExtractedEntity(name="Alice", type="Person"),
+                        ExtractedEntity(name="Nexus", type="Organization"),
+                    ],
+                    relationships=[
+                        ExtractedRelationship(
+                            source="Alice",
+                            target="Nexus",
+                            type="WORKS_FOR",
+                            confidence=0.95,
+                            evidence="forward",
+                        ),
+                        ExtractedRelationship(
+                            source="Nexus",
+                            target="Alice",
+                            type="WORKS_FOR",
+                            confidence=0.88,
+                            evidence="reverse",
+                        ),
+                    ],
+                )
+
+        with tempfile.NamedTemporaryFile(
+            mode="w", suffix=".txt", delete=False, encoding="utf-8",
+        ) as f:
+            f.write("Alice and Nexus reference each other in opposite directions.")
+            tmp_path = Path(f.name)
+
+        try:
+            summary = ingest_file(
+                driver,
+                settings.neo4j_database,
+                input_path=tmp_path,
+                doc_id="directional-test",
+                title="Directional Test",
+                extractor=DirectionalExtractor(),
+            )
+            assert summary["edges"] == 2
+
+            with driver.session(database=settings.neo4j_database) as session:
+                forward = session.run(
+                    "MATCH (:Entity {id: 'alice'})-[r:RELATED_TO {type: 'WORKS_FOR'}]->"
+                    "(:Entity {id: 'nexus'}) RETURN count(r) AS c"
+                ).single()
+                reverse = session.run(
+                    "MATCH (:Entity {id: 'nexus'})-[r:RELATED_TO {type: 'WORKS_FOR'}]->"
+                    "(:Entity {id: 'alice'}) RETURN count(r) AS c"
+                ).single()
+                edge_ids = session.run(
+                    "MATCH (:Entity {id: 'alice'})-[r1:RELATED_TO {type: 'WORKS_FOR'}]->"
+                    "(:Entity {id: 'nexus'}) "
+                    "MATCH (:Entity {id: 'nexus'})-[r2:RELATED_TO {type: 'WORKS_FOR'}]->"
+                    "(:Entity {id: 'alice'}) "
+                    "RETURN r1.id AS forward_id, r2.id AS reverse_id"
+                ).single()
+
+            assert forward is not None and int(forward["c"]) == 1
+            assert reverse is not None and int(reverse["c"]) == 1
+            assert edge_ids is not None
+            assert edge_ids["forward_id"] != edge_ids["reverse_id"]
+        finally:
+            tmp_path.unlink(missing_ok=True)
+            with driver.session(database=settings.neo4j_database) as session:
+                session.run("MATCH (n) DETACH DELETE n")
+            driver.close()
