@@ -8,11 +8,12 @@ NEVER logs or prints API keys.
 
 from __future__ import annotations
 
+import importlib
 import json
 import logging
 import re
 import time
-from typing import Any, Callable
+from typing import Any, Callable, cast
 
 from neo4j_graphrag_kg.extractors.base import (
     BaseExtractor,
@@ -151,14 +152,14 @@ def _call_openai(
 ) -> str:
     """Call the OpenAI ChatCompletion API. Returns the text response."""
     try:
-        import openai
+        openai_module = cast(Any, importlib.import_module("openai"))
     except ImportError:
         raise ImportError(
             "The 'openai' package is required for the LLM extractor with "
             "provider='openai'. Install it with: pip install -e \".[openai]\""
         )
 
-    client = openai.OpenAI(api_key=api_key)
+    client = openai_module.OpenAI(api_key=api_key)
     response = client.chat.completions.create(
         model=model,
         temperature=0,

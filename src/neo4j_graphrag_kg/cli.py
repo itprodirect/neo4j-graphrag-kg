@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib
 import json
 import logging
 from pathlib import Path
@@ -459,7 +460,7 @@ def serve(
     _setup_logging()
 
     try:
-        import uvicorn
+        uvicorn = importlib.import_module("uvicorn")
     except ImportError:
         typer.echo(
             "The 'web' extra is required for 'kg serve'. "
