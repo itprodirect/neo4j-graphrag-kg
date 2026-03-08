@@ -63,8 +63,8 @@ Priority gaps:
 ## Recommended Next Moves
 
 1. Land directionality + reconciliation work before broader feature expansion.
-2. Add setup diagnostics (`kg doctor`).
-3. Improve the web/UI presentation of trust metadata and evidence trails.
+2. Improve the web/UI presentation of trust metadata and evidence trails.
+3. Build guided repair/setup workflows on top of `kg doctor` and `kg check`.
 
 ## Tracking Docs
 

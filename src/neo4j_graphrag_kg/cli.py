@@ -6,6 +6,7 @@ import importlib
 import json
 import logging
 from pathlib import Path
+from typing import Any
 
 import typer
 
@@ -69,6 +70,26 @@ def _build_extractor(
         return ext_type, get_extractor("simple")
 
     raise ValueError(f"Unknown extractor: {ext_type!r}. Use 'simple' or 'llm'.")
+
+
+def _find_local_dotenv() -> Path | None:
+    """Walk up from cwd to locate a local .env file."""
+    cur = Path.cwd()
+    for parent in [cur, *cur.parents]:
+        candidate = parent / ".env"
+        if candidate.is_file():
+            return candidate
+    return None
+
+
+def _module_available(module_name: str) -> bool:
+    """Return True when an optional dependency can be imported."""
+    return importlib.util.find_spec(module_name) is not None
+
+
+def _doctor_check(status: str, detail: str) -> dict[str, str]:
+    """Create a simple doctor status record."""
+    return {"status": status, "detail": detail}
 
 
 @app.command()
@@ -140,6 +161,191 @@ def status() -> None:
 
     except Exception as exc:
         typer.echo(f"Status check failed: {exc}", err=True)
+        raise typer.Exit(code=1)
+    finally:
+        close_driver()
+
+
+@app.command("doctor")
+def doctor(
+    json_output: bool = typer.Option(
+        False,
+        "--json",
+        help="Print setup diagnostics as JSON.",
+    ),
+) -> None:
+    """Run local setup diagnostics for config, dependencies, and connectivity."""
+    settings = get_settings()
+    driver = get_driver(settings)
+    services = build_service_container(settings, driver=driver)
+
+    dotenv_path = _find_local_dotenv()
+    config_summary = {
+        "neo4j_uri": settings.neo4j_uri,
+        "neo4j_database": settings.neo4j_database,
+        "extractor_type": settings.extractor_type,
+        "llm_provider": settings.llm_provider,
+    }
+
+    core_checks: dict[str, dict[str, str]] = {
+        "env_file": _doctor_check(
+            "ok" if dotenv_path is not None else "info",
+            (
+                f"Using .env at {dotenv_path}"
+                if dotenv_path is not None
+                else (
+                    "No .env file found in the current workspace; "
+                    "using process environment and defaults."
+                )
+            ),
+        )
+    }
+    feature_checks: dict[str, dict[str, str]] = {}
+    core_attention = False
+
+    if settings.neo4j_password:
+        core_checks["neo4j_password"] = _doctor_check(
+            "ok",
+            "NEO4J_PASSWORD is configured.",
+        )
+        try:
+            services.graph.verify_connectivity()
+            core_checks["neo4j_connectivity"] = _doctor_check(
+                "ok",
+                f"Connected to {settings.neo4j_uri} / database {settings.neo4j_database}.",
+            )
+        except Exception as exc:
+            core_checks["neo4j_connectivity"] = _doctor_check(
+                "attention",
+                f"Cannot reach Neo4j: {exc}",
+            )
+            core_attention = True
+    else:
+        core_checks["neo4j_password"] = _doctor_check(
+            "attention",
+            "NEO4J_PASSWORD is empty.",
+        )
+        core_checks["neo4j_connectivity"] = _doctor_check(
+            "attention",
+            "Connectivity check skipped because NEO4J_PASSWORD is empty.",
+        )
+        core_attention = True
+
+    extractor_type = settings.extractor_type.strip().lower()
+    provider = settings.llm_provider.strip().lower()
+    provider_module = provider if provider in {"anthropic", "openai"} else ""
+
+    if extractor_type == "simple":
+        core_checks["active_extractor"] = _doctor_check(
+            "ok",
+            "Simple extractor is active and requires no optional LLM dependencies.",
+        )
+    elif extractor_type == "llm":
+        if provider_module == "":
+            core_checks["active_extractor"] = _doctor_check(
+                "attention",
+                (
+                    f"Unsupported LLM_PROVIDER {settings.llm_provider!r}. "
+                    "Use 'anthropic' or 'openai'."
+                ),
+            )
+            core_attention = True
+        elif not settings.llm_api_key:
+            core_checks["active_extractor"] = _doctor_check(
+                "attention",
+                "LLM extractor is configured but LLM_API_KEY is empty.",
+            )
+            core_attention = True
+        elif not _module_available(provider_module):
+            core_checks["active_extractor"] = _doctor_check(
+                "attention",
+                (
+                    f"LLM extractor requires the '{provider_module}' package "
+                    f"for provider {provider_module!r}."
+                ),
+            )
+            core_attention = True
+        else:
+            core_checks["active_extractor"] = _doctor_check(
+                "ok",
+                f"LLM extractor is ready for provider {provider_module!r}.",
+            )
+    else:
+        core_checks["active_extractor"] = _doctor_check(
+            "attention",
+            f"Unsupported EXTRACTOR_TYPE {settings.extractor_type!r}. Use 'simple' or 'llm'.",
+        )
+        core_attention = True
+
+    if provider_module == "":
+        feature_checks["ask"] = _doctor_check(
+            "info",
+            "kg ask requires a supported LLM_PROVIDER ('anthropic' or 'openai').",
+        )
+    elif not settings.llm_api_key:
+        feature_checks["ask"] = _doctor_check(
+            "info",
+            "kg ask is disabled until LLM_API_KEY is configured.",
+        )
+    elif not _module_available(provider_module):
+        feature_checks["ask"] = _doctor_check(
+            "info",
+            (
+                f"Install -e '.[{provider_module}]' to enable kg ask "
+                f"for provider {provider_module!r}."
+            ),
+        )
+    else:
+        feature_checks["ask"] = _doctor_check(
+            "ok",
+            f"kg ask is ready for provider {provider_module!r}.",
+        )
+
+    if _module_available("fastapi") and _module_available("uvicorn"):
+        feature_checks["serve"] = _doctor_check(
+            "ok",
+            "kg serve dependencies are installed.",
+        )
+    else:
+        feature_checks["serve"] = _doctor_check(
+            "info",
+            "Install -e '.[web]' to enable kg serve.",
+        )
+
+    report: dict[str, Any] = {
+        "status": "ok" if not core_attention else "attention",
+        "config": config_summary,
+        "core_checks": core_checks,
+        "feature_checks": feature_checks,
+    }
+
+    try:
+        if json_output:
+            typer.echo(json.dumps(report, indent=2))
+        else:
+            typer.echo(f"Doctor: {report['status']}")
+            typer.echo(
+                "Config: "
+                f"uri={settings.neo4j_uri}  db={settings.neo4j_database}  "
+                f"extractor={settings.extractor_type}  provider={settings.llm_provider}"
+            )
+            typer.echo("Core:")
+            for key, value in core_checks.items():
+                typer.echo(
+                    f"  [{value['status']}] {key}: {value['detail']}"
+                )
+            typer.echo("Features:")
+            for key, value in feature_checks.items():
+                typer.echo(
+                    f"  [{value['status']}] {key}: {value['detail']}"
+                )
+
+        if core_attention:
+            raise typer.Exit(code=1)
+    except typer.Exit:
+        raise
+    except Exception as exc:
+        typer.echo(f"Doctor failed: {exc}", err=True)
         raise typer.Exit(code=1)
     finally:
         close_driver()

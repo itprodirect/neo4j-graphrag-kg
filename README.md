@@ -9,7 +9,7 @@ Lean stack, explicit contracts, practical CLI. Fancy where useful, boring where 
 | Area | Status |
 |---|---|
 | Product stage | `v1 foundation stable`, `v2 plan approved` |
-| Test run | `200 passed, 14 skipped` (`pytest -q`) |
+| Test run | `203 passed, 14 skipped` (`pytest -q`) |
 | Recent work | Static-quality baseline, Neo4j integration CI, trust-aware RAG responses |
 | Next focus | Phase 0/1 ingest correctness: relationship directionality and re-ingest reconciliation |
 
@@ -18,6 +18,7 @@ Lean stack, explicit contracts, practical CLI. Fancy where useful, boring where 
 - Ingest documents into a Neo4j knowledge graph.
 - Extract entities and relationships with either heuristic or LLM pipelines.
 - Run read-safe Cypher from CLI.
+- Run setup diagnostics with `kg doctor`.
 - Run graph integrity diagnostics with `kg check`.
 - Ask natural-language questions through GraphRAG (`kg ask`) with citations and confidence signals.
 - Explore graph structure in a web UI (`kg serve`).
@@ -70,6 +71,7 @@ kg query --cypher "MATCH (e:Entity) RETURN e.name ORDER BY e.name LIMIT 25"
 | `kg ingest-status` | Inspect durable ingest job state |
 | `kg ingest-run` | Run queued ingest job by ID |
 | `kg query` | Execute Cypher (read-only validated by default) |
+| `kg doctor` | Run local setup diagnostics for config, deps, and connectivity |
 | `kg check` | Run integrity diagnostics and fail on stale graph artifacts |
 | `kg ask` | Natural language question -> Cypher -> answer + trust metadata |
 | `kg serve` | Start web UI/API |
@@ -123,15 +125,15 @@ Core modules live in `src/neo4j_graphrag_kg/`:
 
 ### Now
 
-1. Execute v2 phase 0 and phase 1 ingest correctness items.
-2. Improve onboarding diagnostics (`kg doctor`).
-3. Expand investigation workflow in web UI.
+1. Execute remaining v2 phase 0 and phase 1 ingest correctness items.
+2. Expand investigation workflow in web UI.
+3. Add richer trust/evidence exploration in the web UI.
 
 ### Next
 
-- Improve onboarding diagnostics (`kg doctor`).
 - Expand investigation workflow in web UI.
 - Add richer trust/evidence exploration in the web UI.
+- Add deeper integrity and repair workflows on top of `kg check`.
 
 ### Full Plan
 
