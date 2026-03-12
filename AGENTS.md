@@ -41,13 +41,23 @@ kg reset         - drop all data (requires --confirm)
 
 ## Module Snapshot
 
+- `protocols.py` - typed service protocols (`JobStore`, `GraphStore`) and `IngestJobSpec`
 - `ids.py` - deterministic ID generation helpers
 - `chunker.py` - fixed-size text chunking with overlap
 - `extractors/` - extraction layer (`simple`, `llm`) and shared interfaces
-- `upsert.py` - batched Neo4j upsert operations
+- `upsert.py` - batched Neo4j upsert operations + `Neo4jGraphStore` class
 - `ingest.py` - staged ingestion orchestration and durable job state
+- `services.py` - `ServiceContainer` with dependency injection
 - `rag/` - text2cypher + answer generation pipeline
 - `web/` - FastAPI app and static graph UI
+
+## Service Protocol Conventions
+
+- Service contracts are defined as `typing.Protocol` classes in `protocols.py`.
+- Concrete Neo4j implementations: `Neo4jGraphStore` (in `upsert.py`), `Neo4jIngestJobStore` (in `ingest.py`).
+- `IngestPipelineService` accepts `JobStore` and `GraphStore` via constructor injection.
+- Tests use in-memory protocol implementations (e.g. `_MemoryJobStore`, `_MockGraphStore`) instead of monkeypatching module-level functions.
+- `IngestJobSpec` lives in `protocols.py` but is re-exported from `ingest.py` for backward compatibility.
 
 ## Security and Safety
 

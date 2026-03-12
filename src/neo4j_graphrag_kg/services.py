@@ -10,6 +10,7 @@ from neo4j import Driver
 from neo4j_graphrag_kg.config import Settings, get_settings
 from neo4j_graphrag_kg.ingest import IngestPipelineService
 from neo4j_graphrag_kg.neo4j_client import close_driver, get_driver
+from neo4j_graphrag_kg.upsert import Neo4jGraphStore
 
 
 class GraphDiagnosticsChecks(TypedDict):
@@ -145,7 +146,8 @@ def build_service_container(
 
     database = resolved_settings.neo4j_database
     graph = GraphService(resolved_driver, database)
-    ingest = IngestPipelineService(resolved_driver, database)
+    graph_store = Neo4jGraphStore(resolved_driver, database)
+    ingest = IngestPipelineService(resolved_driver, database, graph_store=graph_store)
 
     return ServiceContainer(
         settings=resolved_settings,

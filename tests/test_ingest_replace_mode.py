@@ -2,15 +2,77 @@
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock
-
-import pytest
+from typing import Any
 
 import neo4j_graphrag_kg.ingest as ingest_mod
 
 
-def test_stage_graph_write_defaults_to_atomic(monkeypatch: pytest.MonkeyPatch) -> None:
-    calls = {"atomic": 0}
+class _MockGraphStore:
+    """In-memory GraphStore that records calls for assertion."""
+
+    def __init__(self) -> None:
+        self.calls: dict[str, int] = {
+            "atomic": 0,
+            "purge": 0,
+            "doc": 0,
+            "chunks": 0,
+            "entities": 0,
+            "mentions": 0,
+            "related": 0,
+        }
+        self.purge_return: dict[str, int] = {
+            "chunks": 0,
+            "related_edges": 0,
+            "entities": 0,
+        }
+        self.atomic_return: dict[str, Any] = {
+            "purged": {"chunks": 1, "related_edges": 1, "entities": 0},
+            "written": {"chunks": 1, "entities": 1, "mentions": 1, "edges": 1},
+        }
+
+    def upsert_document(self, *, doc_id: str, title: str, source: str = "") -> None:
+        self.calls["doc"] += 1
+
+    def upsert_chunks(self, rows: list[dict[str, Any]]) -> int:
+        self.calls["chunks"] += 1
+        return len(rows)
+
+    def upsert_entities(self, rows: list[dict[str, Any]]) -> int:
+        self.calls["entities"] += 1
+        return len(rows)
+
+    def upsert_mentions(self, rows: list[dict[str, Any]]) -> int:
+        self.calls["mentions"] += 1
+        return len(rows)
+
+    def upsert_related(self, rows: list[dict[str, Any]]) -> int:
+        self.calls["related"] += 1
+        return len(rows)
+
+    def purge_document_subgraph(
+        self, *, doc_id: str, batch_size: int = 1000
+    ) -> dict[str, int]:
+        self.calls["purge"] += 1
+        return dict(self.purge_return)
+
+    def replace_document_subgraph_atomic(
+        self,
+        *,
+        doc_id: str,
+        title: str,
+        source: str,
+        chunk_rows: list[dict[str, Any]],
+        entity_rows: list[dict[str, Any]],
+        mention_rows: list[dict[str, Any]],
+        relationship_rows: list[dict[str, Any]],
+        batch_size: int = 500,
+    ) -> dict[str, Any]:
+        self.calls["atomic"] += 1
+        return dict(self.atomic_return)
+
+
+def test_stage_graph_write_defaults_to_atomic() -> None:
+    store = _MockGraphStore()
     chunk_row = {
         "id": "doc-atomic::chunk::0",
         "document_id": "doc-atomic",
@@ -18,23 +80,8 @@ def test_stage_graph_write_defaults_to_atomic(monkeypatch: pytest.MonkeyPatch) -
         "text": "x",
     }
 
-    def _atomic(*_args: object, **_kwargs: object) -> dict[str, object]:
-        calls["atomic"] += 1
-        return {
-            "purged": {"chunks": 1, "related_edges": 1, "entities": 0},
-            "written": {"chunks": 1, "entities": 1, "mentions": 1, "edges": 1},
-        }
-
-    monkeypatch.setattr(ingest_mod, "replace_document_subgraph_atomic", _atomic)
-
-    def _should_not_run(*_args: object, **_kwargs: object) -> dict[str, int]:
-        raise AssertionError("non-atomic path should not be used in atomic mode")
-
-    monkeypatch.setattr(ingest_mod, "purge_document_subgraph", _should_not_run)
-
     result = ingest_mod._stage_graph_write(
-        MagicMock(),
-        "neo4j",
+        store,
         doc_id="doc-atomic",
         title="Atomic",
         source="",
@@ -44,21 +91,17 @@ def test_stage_graph_write_defaults_to_atomic(monkeypatch: pytest.MonkeyPatch) -
         relationship_rows=[],
     )
 
-    assert calls["atomic"] == 1
+    assert store.calls["atomic"] == 1
     assert result["replace_mode"] == "atomic"
+    # Non-atomic path must not have been called.
+    assert store.calls["purge"] == 0
+    assert store.calls["doc"] == 0
 
 
-def test_stage_graph_write_non_atomic_mode_uses_legacy_path(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    calls = {
-        "purge": 0,
-        "doc": 0,
-        "chunks": 0,
-        "entities": 0,
-        "mentions": 0,
-        "related": 0,
-    }
+def test_stage_graph_write_non_atomic_mode_uses_legacy_path() -> None:
+    store = _MockGraphStore()
+    store.purge_return = {"chunks": 2, "related_edges": 3, "entities": 4}
+
     chunk_row = {
         "id": "doc-legacy::chunk::0",
         "document_id": "doc-legacy",
@@ -66,33 +109,8 @@ def test_stage_graph_write_non_atomic_mode_uses_legacy_path(
         "text": "x",
     }
 
-    def _atomic_should_not_run(*_args: object, **_kwargs: object) -> dict[str, object]:
-        raise AssertionError("atomic path should not be used in non_atomic mode")
-
-    monkeypatch.setattr(
-        ingest_mod, "replace_document_subgraph_atomic", _atomic_should_not_run
-    )
-
-    def _purge(*_args: object, **_kwargs: object) -> dict[str, int]:
-        calls["purge"] += 1
-        return {"chunks": 2, "related_edges": 3, "entities": 4}
-
-    def _bump(key: str) -> None:
-        calls[key] += 1
-
-    def _bump_fn(key: str):
-        return lambda *_a, **_k: _bump(key)
-
-    monkeypatch.setattr(ingest_mod, "purge_document_subgraph", _purge)
-    monkeypatch.setattr(ingest_mod, "upsert_document", _bump_fn("doc"))
-    monkeypatch.setattr(ingest_mod, "upsert_chunks", _bump_fn("chunks"))
-    monkeypatch.setattr(ingest_mod, "upsert_entities", _bump_fn("entities"))
-    monkeypatch.setattr(ingest_mod, "upsert_mentions", _bump_fn("mentions"))
-    monkeypatch.setattr(ingest_mod, "upsert_related", _bump_fn("related"))
-
     result = ingest_mod._stage_graph_write(
-        MagicMock(),
-        "neo4j",
+        store,
         doc_id="doc-legacy",
         title="Legacy",
         source="",
@@ -105,7 +123,10 @@ def test_stage_graph_write_non_atomic_mode_uses_legacy_path(
 
     assert result["replace_mode"] == "non_atomic"
     assert result["purged"] == {"chunks": 2, "related_edges": 3, "entities": 4}
-    assert calls == {
+    # Atomic path must not have been called.
+    assert store.calls["atomic"] == 0
+    assert store.calls == {
+        "atomic": 0,
         "purge": 1,
         "doc": 1,
         "chunks": 1,

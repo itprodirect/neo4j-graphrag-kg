@@ -14,6 +14,7 @@ Chronological build log and program status snapshots.
 | 6 | Security and reliability pass | Complete |
 | 7 | Durable ingest jobs and service boundary | Complete |
 | 8 | V2 planning + synthetic investigation dataset | Complete |
+| 9 | Phase 2: Typed service protocols | Complete |
 
 ---
 
@@ -85,13 +86,34 @@ Notes:
 
 - GitHub issue creation is pending valid `gh` authentication.
 
+## Session 9: Phase 2 — Typed Service Protocols
+
+Highlights:
+
+- Created `protocols.py` with `JobStore` and `GraphStore` typed protocols (`typing.Protocol`).
+- Moved `IngestJobSpec` dataclass to `protocols.py`; re-exported from `ingest.py` for backward compatibility.
+- Added `Neo4jGraphStore` class in `upsert.py` wrapping existing free functions.
+- Refactored `_stage_graph_write()` to accept `GraphStore` protocol instead of raw `driver`/`database`.
+- Refactored `IngestPipelineService` to accept `JobStore` and `GraphStore` via constructor injection.
+- Updated `ServiceContainer` wiring in `services.py`.
+- Replaced monkeypatch-heavy test patterns with mock protocol implementations.
+- Added protocol conformance tests (`test_protocols.py`).
+- All 209 tests pass, ruff clean, mypy strict clean.
+
+Notes:
+
+- `Retriever` and `Answerer` protocols deferred — RAG pipeline is fully decoupled and doesn't need immediate protocol extraction.
+- Structured telemetry emission is the next Phase 2 item.
+
 ---
 
-## Current Program Status (as of 2026-03-04)
+## Current Program Status (as of 2026-03-11)
 
 - v1 foundation: stable and test-backed.
 - v2 planning assets: complete.
-- next execution target: phase 0 and phase 1 correctness items.
+- Phase 0 and Phase 1: complete.
+- Phase 2: in progress — typed protocols landed, telemetry remaining.
+- Next execution target: Phase 2 telemetry, then Phase 3 RAG contracts.
 
 Related:
 

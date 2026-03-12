@@ -466,3 +466,71 @@ def upsert_related(
     count = _run_batch(driver, database, _UPSERT_RELATED, rows)
     logger.info("Upserted %d RELATED_TO edges", count)
     return count
+
+
+# ---------------------------------------------------------------------------
+# Neo4jGraphStore — satisfies the GraphStore protocol
+# ---------------------------------------------------------------------------
+
+
+class Neo4jGraphStore:
+    """GraphStore backed by Neo4j batched UNWIND + MERGE operations.
+
+    Thin wrapper that delegates to the module-level free functions,
+    binding a ``Driver`` and ``database`` at construction time.
+    """
+
+    def __init__(self, driver: Driver, database: str) -> None:
+        self._driver = driver
+        self._database = database
+
+    def upsert_document(
+        self, *, doc_id: str, title: str, source: str = ""
+    ) -> None:
+        upsert_document(
+            self._driver, self._database, doc_id=doc_id, title=title, source=source
+        )
+
+    def upsert_chunks(self, rows: list[dict[str, Any]]) -> int:
+        return upsert_chunks(self._driver, self._database, rows)
+
+    def upsert_entities(self, rows: list[dict[str, Any]]) -> int:
+        return upsert_entities(self._driver, self._database, rows)
+
+    def upsert_mentions(self, rows: list[dict[str, Any]]) -> int:
+        return upsert_mentions(self._driver, self._database, rows)
+
+    def upsert_related(self, rows: list[dict[str, Any]]) -> int:
+        return upsert_related(self._driver, self._database, rows)
+
+    def purge_document_subgraph(
+        self, *, doc_id: str, batch_size: int = 1000
+    ) -> dict[str, int]:
+        return purge_document_subgraph(
+            self._driver, self._database, doc_id=doc_id, batch_size=batch_size
+        )
+
+    def replace_document_subgraph_atomic(
+        self,
+        *,
+        doc_id: str,
+        title: str,
+        source: str,
+        chunk_rows: list[dict[str, Any]],
+        entity_rows: list[dict[str, Any]],
+        mention_rows: list[dict[str, Any]],
+        relationship_rows: list[dict[str, Any]],
+        batch_size: int = 500,
+    ) -> dict[str, Any]:
+        return replace_document_subgraph_atomic(
+            self._driver,
+            self._database,
+            doc_id=doc_id,
+            title=title,
+            source=source,
+            chunk_rows=chunk_rows,
+            entity_rows=entity_rows,
+            mention_rows=mention_rows,
+            relationship_rows=relationship_rows,
+            batch_size=batch_size,
+        )

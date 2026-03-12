@@ -2,13 +2,13 @@
 
 Phased execution plan for rebuilding on top of v1 lessons.
 
-## Roadmap Status (as of 2026-03-04)
+## Roadmap Status (as of 2026-03-11)
 
 | Phase | Focus | Status |
 |---|---|---|
-| Phase 0 | Baseline and architecture decisions | Planned |
-| Phase 1 | Correctness core | Planned |
-| Phase 2 | Contracts and observability | Planned |
+| Phase 0 | Baseline and architecture decisions | Complete |
+| Phase 1 | Correctness core | Complete |
+| Phase 2 | Contracts and observability | In Progress |
 | Phase 3 | Trustworthy GraphRAG | Planned |
 | Phase 4 | UX and product surface | Planned |
 | Phase 5 | DevSecOps hardening and release | Planned |
@@ -45,15 +45,20 @@ Exit criteria:
 
 Outcomes:
 
-- Introduce typed service protocols.
-- Add `kg check` integrity diagnostics.
+- Introduce typed service protocols. ✅ `JobStore`, `GraphStore` protocols in `protocols.py`.
+- Add `kg check` integrity diagnostics. ✅ Landed in earlier session.
 - Add structured ingest/query telemetry.
 
 Exit criteria:
 
-- Protocol interfaces are documented and type-checked.
-- Integrity diagnostics command is CI-friendly.
+- Protocol interfaces are documented and type-checked. ✅ mypy strict passes.
+- Integrity diagnostics command is CI-friendly. ✅
 - Metrics fields are stable and documented.
+
+Remaining:
+
+- `Retriever` / `Answerer` protocols (RAG layer — deferred to next session).
+- Structured telemetry emission at each pipeline stage.
 
 ## Phase 3: Trustworthy GraphRAG (2-3 weeks)
 

@@ -7,7 +7,6 @@ import json
 import logging
 import threading
 import time
-from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -20,21 +19,35 @@ from neo4j_graphrag_kg.extractors.simple import SimpleExtractor
 from neo4j_graphrag_kg.ids import chunk_id as make_chunk_id
 from neo4j_graphrag_kg.ids import edge_id as make_edge_id
 from neo4j_graphrag_kg.ids import slugify
-from neo4j_graphrag_kg.upsert import (
-    purge_document_subgraph,
-    replace_document_subgraph_atomic,
-    upsert_chunks,
-    upsert_document,
-    upsert_entities,
-    upsert_mentions,
-    upsert_related,
+from neo4j_graphrag_kg.protocols import (
+    REPLACE_MODE_ATOMIC as _PROTO_REPLACE_MODE_ATOMIC,
 )
+from neo4j_graphrag_kg.protocols import (
+    REPLACE_MODE_NON_ATOMIC as _PROTO_REPLACE_MODE_NON_ATOMIC,
+)
+from neo4j_graphrag_kg.protocols import (
+    GraphStore,
+    IngestJobSpec,
+    JobStore,
+)
+from neo4j_graphrag_kg.upsert import Neo4jGraphStore
 
 logger = logging.getLogger(__name__)
 
-REPLACE_MODE_ATOMIC = "atomic"
-REPLACE_MODE_NON_ATOMIC = "non_atomic"
+# Re-export from protocols for backward compatibility.
+REPLACE_MODE_ATOMIC = _PROTO_REPLACE_MODE_ATOMIC
+REPLACE_MODE_NON_ATOMIC = _PROTO_REPLACE_MODE_NON_ATOMIC
 _REPLACE_MODES = {REPLACE_MODE_ATOMIC, REPLACE_MODE_NON_ATOMIC}
+
+# Explicit re-exports for backward compatibility.
+__all__ = [
+    "IngestJobSpec",
+    "IngestPipelineService",
+    "Neo4jIngestJobStore",
+    "REPLACE_MODE_ATOMIC",
+    "REPLACE_MODE_NON_ATOMIC",
+    "ingest_file",
+]
 
 
 def _utc_now_iso() -> str:
@@ -219,8 +232,7 @@ def _stage_extract(
 
 
 def _stage_graph_write(
-    driver: Driver,
-    database: str,
+    graph_store: GraphStore,
     *,
     doc_id: str,
     title: str,
@@ -234,9 +246,7 @@ def _stage_graph_write(
     mode = _normalize_replace_mode(replace_mode)
 
     if mode == REPLACE_MODE_ATOMIC:
-        result = replace_document_subgraph_atomic(
-            driver,
-            database,
+        result = graph_store.replace_document_subgraph_atomic(
             doc_id=doc_id,
             title=title,
             source=source,
@@ -248,12 +258,12 @@ def _stage_graph_write(
         result["replace_mode"] = mode
         return result
 
-    purged = purge_document_subgraph(driver, database, doc_id=doc_id)
-    upsert_document(driver, database, doc_id=doc_id, title=title, source=source)
-    upsert_chunks(driver, database, chunk_rows)
-    upsert_entities(driver, database, entity_rows)
-    upsert_mentions(driver, database, mention_rows)
-    upsert_related(driver, database, relationship_rows)
+    purged = graph_store.purge_document_subgraph(doc_id=doc_id)
+    graph_store.upsert_document(doc_id=doc_id, title=title, source=source)
+    graph_store.upsert_chunks(chunk_rows)
+    graph_store.upsert_entities(entity_rows)
+    graph_store.upsert_mentions(mention_rows)
+    graph_store.upsert_related(relationship_rows)
     return {
         "replace_mode": mode,
         "purged": purged,
@@ -312,19 +322,6 @@ def _build_summary(
         "written": written,
         "elapsed_s": round(elapsed_s, 2),
     }
-
-
-@dataclass(frozen=True)
-class IngestJobSpec:
-    """Input payload for a durable ingestion job."""
-
-    input_path: Path
-    doc_id: str
-    title: str
-    source: str = ""
-    chunk_size: int = 1000
-    chunk_overlap: int = 150
-    replace_mode: str = REPLACE_MODE_ATOMIC
 
 
 _UPSERT_JOB = """\
@@ -522,16 +519,18 @@ class IngestPipelineService:
         driver: Driver,
         database: str,
         *,
-        job_store: Neo4jIngestJobStore | None = None,
+        job_store: JobStore | None = None,
+        graph_store: GraphStore | None = None,
     ) -> None:
         self._driver = driver
         self._database = database
-        self._job_store = job_store or Neo4jIngestJobStore(driver, database)
+        self._job_store: JobStore = job_store or Neo4jIngestJobStore(driver, database)
+        self._graph_store: GraphStore = graph_store or Neo4jGraphStore(driver, database)
         self._doc_run_locks: dict[str, threading.Lock] = {}
         self._doc_run_locks_guard = threading.Lock()
 
     @property
-    def jobs(self) -> Neo4jIngestJobStore:
+    def jobs(self) -> JobStore:
         return self._job_store
 
     def _lock_for_doc(self, doc_id: str) -> threading.Lock:
@@ -745,8 +744,7 @@ class IngestPipelineService:
             row for row in state.get("relationship_rows", []) if isinstance(row, dict)
         ]
         return _stage_graph_write(
-            self._driver,
-            self._database,
+            self._graph_store,
             doc_id=str(job["doc_id"]),
             title=str(job["title"]),
             source=str(job.get("source", "")),
@@ -806,9 +804,11 @@ def ingest_file(
     chunk_overlap: int = 150,
     extractor: BaseExtractor | None = None,
     replace_mode: str = REPLACE_MODE_ATOMIC,
+    graph_store: GraphStore | None = None,
 ) -> dict[str, Any]:
     """Run synchronous ingest for one file (compatibility wrapper)."""
     active_extractor = extractor or SimpleExtractor()
+    active_store = graph_store or Neo4jGraphStore(driver, database)
     t0 = time.perf_counter()
 
     parse_state = _stage_parse_chunk(
@@ -834,8 +834,7 @@ def ingest_file(
     ]
 
     graph_write_result = _stage_graph_write(
-        driver,
-        database,
+        active_store,
         doc_id=doc_id,
         title=title,
         source=source,

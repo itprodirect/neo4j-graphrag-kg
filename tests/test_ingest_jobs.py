@@ -58,6 +58,17 @@ class _MemoryJobStore:
         job = self._jobs.get(job_id)
         return deepcopy(job) if job is not None else None
 
+    def list_jobs(
+        self,
+        *,
+        status: str | None = None,
+        limit: int = 20,
+    ) -> list[dict[str, object]]:
+        jobs = list(self._jobs.values())
+        if status is not None:
+            jobs = [j for j in jobs if j.get("status") == status]
+        return [deepcopy(j) for j in jobs[:limit]]
+
     def save_progress(
         self,
         *,
