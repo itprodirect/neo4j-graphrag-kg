@@ -9,8 +9,8 @@ Lean stack, explicit contracts, practical CLI. Fancy where useful, boring where 
 | Area | Status |
 |---|---|
 | Product stage | `v1 foundation stable`, `v2 plan approved` |
-| Test run | `203 passed, 14 skipped` (`pytest -q`) |
-| Recent work | Static-quality baseline, Neo4j integration CI, trust-aware RAG responses |
+| Test run | `209 passed, 14 skipped` (`pytest -q`) |
+| Recent work | LLM timeout protection, RAG prompt injection guards, trust-aware RAG responses |
 | Next focus | Phase 0/1 ingest correctness: relationship directionality and re-ingest reconciliation |
 
 ## What You Can Do Today

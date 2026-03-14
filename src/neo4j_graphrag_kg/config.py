@@ -48,6 +48,7 @@ class Settings:
     llm_provider: str = field(default="anthropic")
     llm_model: str = field(default="")
     llm_api_key: str = field(default="")
+    llm_timeout: float = field(default=60.0)
 
     # Schema constraints for LLM extraction
     entity_types: list[str] = field(default_factory=lambda: [
@@ -86,6 +87,7 @@ class Settings:
             llm_provider=os.getenv("LLM_PROVIDER", "anthropic"),
             llm_model=os.getenv("LLM_MODEL", ""),
             llm_api_key=os.getenv("LLM_API_KEY", ""),
+            llm_timeout=float(os.getenv("LLM_TIMEOUT", "60")),
             entity_types=_csv_to_list(entity_types_str),
             relationship_types=_csv_to_list(relationship_types_str),
             cors_origins=_csv_to_list(os.getenv(

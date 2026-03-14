@@ -13,6 +13,8 @@ Technical notes for maintainers and contributors.
 | CI static quality gates | Implemented (`ruff`, `mypy`, `pytest`) |
 | Neo4j integration CI | Implemented |
 | RAG trust metadata | Implemented (`citations`, `confidence`, `insufficient_evidence`) |
+| LLM timeout protection | Implemented (configurable via `LLM_TIMEOUT`) |
+| RAG prompt injection guards | Implemented (`<user_question>` tag sandboxing) |
 | v2 refactor execution | Planned |
 
 ## Core Flow
@@ -54,6 +56,8 @@ Text file -> chunk -> extract -> normalize IDs -> batched upsert -> Neo4j
 - Never log API keys or credentials.
 - Read-only validation is default for ad-hoc query execution.
 - Destructive commands require explicit user intent.
+- LLM API calls enforce a configurable timeout (`LLM_TIMEOUT`, default 60s) to prevent indefinite hangs.
+- RAG prompts wrap user input in `<user_question>` tags with explicit instructions to ignore embedded prompt overrides (prompt injection mitigation).
 
 ## Current Gaps
 

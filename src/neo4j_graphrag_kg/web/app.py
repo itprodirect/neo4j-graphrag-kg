@@ -236,6 +236,7 @@ async def ask_endpoint(req: AskRequest) -> JSONResponse:
             provider=settings.llm_provider,
             model=settings.llm_model,
             api_key=settings.llm_api_key,
+            timeout=settings.llm_timeout,
         )
         return JSONResponse({
             "question": response.question,

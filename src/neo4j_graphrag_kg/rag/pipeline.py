@@ -76,6 +76,7 @@ def ask(
     provider: str = "anthropic",
     model: str = "",
     api_key: str = "",
+    timeout: float = 60.0,
     cypher_only: bool = False,
 ) -> RAGResponse:
     """Run the full RAG pipeline: question → Cypher → execute → answer.
@@ -111,6 +112,7 @@ def ask(
         provider=provider,
         model=model,
         api_key=api_key,
+        timeout=timeout,
     )
     logger.debug("Generated Cypher (%d chars): %s", len(cypher), cypher)
 
@@ -162,6 +164,7 @@ def ask(
                 provider=provider,
                 model=model,
                 api_key=api_key,
+                timeout=timeout,
             )
             # Validate the retry too
             cypher = validate_cypher_readonly(cypher)
@@ -194,6 +197,7 @@ def ask(
         provider=provider,
         model=model,
         api_key=api_key,
+        timeout=timeout,
     )
 
     elapsed = time.perf_counter() - t0

@@ -63,6 +63,7 @@ def _build_extractor(
             api_key=api_key,
             entity_types=e_types,
             relationship_types=settings.relationship_types,
+            timeout=settings.llm_timeout,
         )
         return ext_type, extractor
 
@@ -680,6 +681,7 @@ def ask(
             provider=llm_provider,
             model=llm_model,
             api_key=api_key,
+            timeout=settings.llm_timeout,
             cypher_only=cypher_only,
         )
 

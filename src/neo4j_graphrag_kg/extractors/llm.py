@@ -24,7 +24,10 @@ from neo4j_graphrag_kg.extractors.base import (
 
 logger = logging.getLogger(__name__)
 
-ProviderCall = Callable[[str, str, str, str], str]
+ProviderCall = Callable[[str, str, str, str, float], str]
+
+# Default timeout for LLM API calls (seconds).
+_DEFAULT_TIMEOUT = 60.0
 
 # ---------------------------------------------------------------------------
 # Default schema constraints
@@ -120,6 +123,7 @@ def _call_anthropic(
     model: str,
     system_prompt: str,
     user_prompt: str,
+    timeout: float,
 ) -> str:
     """Call the Anthropic Messages API. Returns the text response."""
     try:
@@ -130,7 +134,7 @@ def _call_anthropic(
             "provider='anthropic'. Install it with: pip install -e \".[anthropic]\""
         )
 
-    client = anthropic.Anthropic(api_key=api_key)
+    client = anthropic.Anthropic(api_key=api_key, timeout=timeout)
     message = client.messages.create(
         model=model,
         max_tokens=4096,
@@ -149,6 +153,7 @@ def _call_openai(
     model: str,
     system_prompt: str,
     user_prompt: str,
+    timeout: float,
 ) -> str:
     """Call the OpenAI ChatCompletion API. Returns the text response."""
     try:
@@ -159,7 +164,7 @@ def _call_openai(
             "provider='openai'. Install it with: pip install -e \".[openai]\""
         )
 
-    client = openai_module.OpenAI(api_key=api_key)
+    client = openai_module.OpenAI(api_key=api_key, timeout=timeout)
     response = client.chat.completions.create(
         model=model,
         temperature=0,
@@ -210,6 +215,7 @@ class LLMExtractor(BaseExtractor):
         entity_types: list[str] | None = None,
         relationship_types: list[str] | None = None,
         max_retries: int = 1,
+        timeout: float = _DEFAULT_TIMEOUT,
     ) -> None:
         if provider not in _PROVIDERS:
             raise ValueError(
@@ -236,6 +242,7 @@ class LLMExtractor(BaseExtractor):
             else relationship_types
         )
         self._max_retries = max_retries
+        self._timeout = timeout
         self._call_fn: ProviderCall = _PROVIDERS[provider]
 
         # Log config (NEVER the key)
@@ -270,7 +277,7 @@ class LLMExtractor(BaseExtractor):
             try:
                 t0 = time.perf_counter()
                 response = self._call_fn(
-                    self._api_key, self._model, system, user,
+                    self._api_key, self._model, system, user, self._timeout,
                 )
                 elapsed = time.perf_counter() - t0
                 logger.debug(
